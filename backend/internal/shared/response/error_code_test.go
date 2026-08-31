@@ -20,6 +20,7 @@ func TestInferErrorCode(t *testing.T) {
 		{name: "pricing", status: http.StatusPaymentRequired, msg: "model pricing is required", want: CodeBillingPricingRequired},
 		{name: "quota", status: http.StatusConflict, msg: "storage quota exceeded", want: CodeQuotaExceeded},
 		{name: "upstream", status: http.StatusBadGateway, msg: "remote models unavailable", want: "llm.remote_models_unavailable"},
+		{name: "Grok leader model", status: http.StatusConflict, msg: "selected model does not use Grok leader", want: "llm.grok_leader_required"},
 		{name: "generation canceled", status: http.StatusBadRequest, msg: "message generation canceled", want: "conversation_run.canceled"},
 		{name: "internal", status: http.StatusInternalServerError, msg: "update settings failed: pq: bad column", want: CodeInternal},
 		{name: "provider", status: http.StatusBadRequest, msg: "invalid oauth state", want: "auth.oauth_state_invalid"},
