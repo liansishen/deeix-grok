@@ -494,6 +494,13 @@ export interface BillingPriceResponse {
   planID: number;
 }
 
+export interface BindGrokLeaderSessionRequest {
+  /** @maxLength 128 */
+  platformModelName: string;
+  /** @maxLength 128 */
+  sessionID: string;
+}
+
 export interface BindModelUpstreamSourceRequest {
   /** @min 0 */
   cbDurationMin?: number;
@@ -1503,6 +1510,37 @@ export interface GetKnowledgeBaseFileProcessingStatusesRequest {
    * @minItems 1
    */
   fileIDs: string[];
+}
+
+export interface GrokLeaderSessionBindingResponse {
+  conversation: ConversationResponse;
+  session: GrokLeaderSessionResponse;
+}
+
+export interface GrokLeaderSessionBindingResponseDoc {
+  data: GrokLeaderSessionBindingResponse;
+  errorMsg: string;
+}
+
+export interface GrokLeaderSessionListResponseDoc {
+  data: GrokLeaderSessionResponse[];
+  errorMsg: string;
+}
+
+export interface GrokLeaderSessionResponse {
+  activity: string;
+  cwd: string;
+  isWorktree: boolean;
+  lastChangeUnixMS: number;
+  lastTurnSummary: string;
+  modelID: string;
+  origin: string;
+  originHost: string;
+  reasoningEffort: string;
+  resident: boolean;
+  sessionID: string;
+  title: string;
+  yolo: boolean;
 }
 
 export interface GroupModelsResponse {
@@ -8383,6 +8421,25 @@ export namespace Conversations {
   }
 
   /**
+   * @description 加载目标 Grok 会话并将其绑定到当前 Deeix 会话
+   * @tags chat
+   * @name GrokSessionCreate
+   * @summary 绑定已有 Grok leader 会话
+   * @request POST:/conversations/{id}/grok-session
+   * @secure
+   */
+  export namespace GrokSessionCreate {
+    export type RequestParams = {
+      /** 会话 public_id */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = BindGrokLeaderSessionRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = GrokLeaderSessionBindingResponseDoc;
+  }
+
+  /**
    * @description 替换指定会话的标签；传入空数组可清空标签
    * @tags chat
    * @name LabelsPartialUpdate
@@ -8821,6 +8878,27 @@ export namespace Files {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = Blob;
+  }
+}
+
+export namespace Grok {
+  /**
+   * @description 返回与 Deeix 使用同一 Grok leader 的可发现会话
+   * @tags chat
+   * @name LeaderSessionsList
+   * @summary 查询共享 Grok leader 会话
+   * @request GET:/grok/leader/sessions
+   * @secure
+   */
+  export namespace LeaderSessionsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 使用 grok_leader 协议的平台模型名 */
+      model: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = GrokLeaderSessionListResponseDoc;
   }
 }
 

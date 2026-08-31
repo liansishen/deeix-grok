@@ -10778,6 +10778,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/conversations/{id}/grok-session": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "加载目标 Grok 会话并将其绑定到当前 Deeix 会话",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "绑定已有 Grok leader 会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 public_id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "绑定参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/BindGrokLeaderSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/GrokLeaderSessionBindingResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/conversations/{id}/labels": {
             "patch": {
                 "security": [
@@ -12109,6 +12185,64 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/grok/leader/sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回与 Deeix 使用同一 Grok leader 的可发现会话",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "查询共享 Grok leader 会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "使用 grok_leader 协议的平台模型名",
+                        "name": "model",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/GrokLeaderSessionListResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/ConversationErrorDoc"
                         }
@@ -16186,6 +16320,23 @@ const docTemplate = `{
                 }
             }
         },
+        "BindGrokLeaderSessionRequest": {
+            "type": "object",
+            "required": [
+                "platformModelName",
+                "sessionID"
+            ],
+            "properties": {
+                "platformModelName": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "sessionID": {
+                    "type": "string",
+                    "maxLength": 128
+                }
+            }
+        },
         "BindModelUpstreamSourceRequest": {
             "type": "object",
             "required": [
@@ -19296,6 +19447,113 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "GrokLeaderSessionBindingResponse": {
+            "type": "object",
+            "required": [
+                "conversation",
+                "session"
+            ],
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/ConversationResponse"
+                },
+                "session": {
+                    "$ref": "#/definitions/GrokLeaderSessionResponse"
+                }
+            }
+        },
+        "GrokLeaderSessionBindingResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/GrokLeaderSessionBindingResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "GrokLeaderSessionListResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/GrokLeaderSessionResponse"
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "GrokLeaderSessionResponse": {
+            "type": "object",
+            "required": [
+                "activity",
+                "cwd",
+                "isWorktree",
+                "lastChangeUnixMS",
+                "lastTurnSummary",
+                "modelID",
+                "origin",
+                "originHost",
+                "reasoningEffort",
+                "resident",
+                "sessionID",
+                "title",
+                "yolo"
+            ],
+            "properties": {
+                "activity": {
+                    "type": "string"
+                },
+                "cwd": {
+                    "type": "string"
+                },
+                "isWorktree": {
+                    "type": "boolean"
+                },
+                "lastChangeUnixMS": {
+                    "type": "integer"
+                },
+                "lastTurnSummary": {
+                    "type": "string"
+                },
+                "modelID": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "originHost": {
+                    "type": "string"
+                },
+                "reasoningEffort": {
+                    "type": "string"
+                },
+                "resident": {
+                    "type": "boolean"
+                },
+                "sessionID": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "yolo": {
+                    "type": "boolean"
                 }
             }
         },
