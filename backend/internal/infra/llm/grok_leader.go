@@ -120,10 +120,12 @@ func (a *grokLeaderAdapter) bindSession(ctx context.Context, route RouteConfig, 
 		_ = conn.Close()
 		return nil, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, targetID)
 	}
-	if err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
+	history, err := loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD)
+	if err != nil {
 		_ = conn.Close()
 		return nil, err
 	}
+	entry.History = history
 	if session.conn != nil {
 		_ = session.conn.Close()
 	}
@@ -204,16 +206,106 @@ func findGrokLeaderSession(sessions []GrokLeaderSession, sessionID string) (Grok
 	return GrokLeaderSession{}, false
 }
 
-func loadGrokLeaderSession(conn net.Conn, requestID int, sessionID string, cwd string) error {
+func loadGrokLeaderSession(conn net.Conn, requestID int, sessionID string, cwd string) ([]GrokLeaderHistoryMessage, error) {
 	if err := sendGrokACPRequest(conn, requestID, "session/load", map[string]interface{}{
 		"sessionId": sessionID, "cwd": cwd, "mcpServers": []interface{}{},
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	if _, err := readGrokACPResponse(conn, requestID); err != nil {
-		return fmt.Errorf("load Grok leader session %q: %w", sessionID, err)
+	history := make([]GrokLeaderHistoryMessage, 0)
+	skipTurn := false
+	for {
+		message, err := readGrokLeaderMessage(conn)
+		if err != nil {
+			return nil, fmt.Errorf("load Grok leader session %q: %w", sessionID, err)
+		}
+		if grokString(message, "type") == "error" {
+			return nil, errors.New(grokMessageError(message))
+		}
+		if grokString(message, "type") != "acp" {
+			continue
+		}
+		payload := make(map[string]interface{})
+		if err = json.Unmarshal([]byte(grokString(message, "payload")), &payload); err != nil {
+			return nil, fmt.Errorf("decode Grok ACP session/load message: %w", err)
+		}
+		if payload["id"] != nil && grokJSONID(payload["id"]) == requestID {
+			if payload["error"] != nil {
+				return nil, fmt.Errorf("load Grok leader session %q: Grok ACP %s", sessionID, grokACPError(payload["error"]))
+			}
+			return history, nil
+		}
+		if grokString(payload, "method") != "session/update" {
+			continue
+		}
+		params, ok := grokMapAt(payload, "params")
+		if !ok {
+			continue
+		}
+		meta, ok := grokMapAt(params, "_meta")
+		if !ok {
+			continue
+		}
+		isReplay, _ := meta["isReplay"].(bool)
+		if !isReplay {
+			continue
+		}
+		update, ok := grokMapAt(params, "update")
+		if !ok {
+			continue
+		}
+		if grokFirstString(update, "sessionUpdate", "session_update") == "user_message_chunk" {
+			updateMeta, _ := grokMapAt(update, "_meta")
+			skipTurn, _ = updateMeta["hideFromScrollback"].(bool)
+		}
+		if skipTurn {
+			continue
+		}
+		history = appendGrokLeaderHistoryUpdate(history, update, grokInt64(meta, "agentTimestampMs"))
 	}
-	return nil
+}
+
+func appendGrokLeaderHistoryUpdate(history []GrokLeaderHistoryMessage, update map[string]interface{}, createdAtUnixMS int64) []GrokLeaderHistoryMessage {
+	kind := grokFirstString(update, "sessionUpdate", "session_update")
+	text := grokReplayTextAt(update, "content")
+	if text == "" {
+		return history
+	}
+	switch kind {
+	case "user_message_chunk":
+		if len(history) > 0 && history[len(history)-1].Role == "user" {
+			history[len(history)-1].Content = appendGrokLeaderHistoryText(history[len(history)-1].Content, text)
+			return history
+		}
+		return append(history, GrokLeaderHistoryMessage{Role: "user", Content: text, CreatedAtUnixMS: createdAtUnixMS})
+	case "agent_message_chunk", "agent_thought_chunk":
+		if len(history) == 0 || history[len(history)-1].Role != "assistant" {
+			history = append(history, GrokLeaderHistoryMessage{Role: "assistant", CreatedAtUnixMS: createdAtUnixMS})
+		}
+		current := &history[len(history)-1]
+		if kind == "agent_thought_chunk" {
+			current.ReasoningContent = appendGrokLeaderHistoryText(current.ReasoningContent, text)
+		} else {
+			current.Content = appendGrokLeaderHistoryText(current.Content, text)
+		}
+	}
+	return history
+}
+
+func appendGrokLeaderHistoryText(current string, next string) string {
+	return current + next
+}
+
+func grokReplayTextAt(value map[string]interface{}, key string) string {
+	if text, ok := value[key].(string); ok {
+		return text
+	}
+	content, ok := value[key].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	text, _ := content["text"].(string)
+	return text
 }
 
 func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input GenerateInput, onEvent func(GenerateStreamEvent) error) (*GenerateOutput, error) {
@@ -290,7 +382,7 @@ func (a *grokLeaderAdapter) acquireConnection(ctx context.Context, route RouteCo
 			_ = conn.Close()
 			return nil, "", 0, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, persistedID)
 		}
-		if err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
+		if _, err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
 			_ = conn.Close()
 			return nil, "", 0, err
 		}

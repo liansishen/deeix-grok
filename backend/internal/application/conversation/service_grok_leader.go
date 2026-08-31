@@ -2,8 +2,11 @@ package conversation
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
@@ -65,11 +68,87 @@ func (s *Service) BindGrokLeaderSession(ctx context.Context, userID uint, conver
 		conversation.Model = modelName
 		conversation.Provider = provider
 	}
+	if conversation.MessageCount == 0 && len(boundSession.History) > 0 {
+		conversation.MessageCount, err = s.importGrokLeaderHistory(ctx, conversation, boundSession.SessionID, boundSession.History)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err = s.repo.UpdateConversationLastResponseID(ctx, conversation.ID, boundSession.SessionID); err != nil {
 		return nil, err
 	}
 	conversation.LastResponseID = boundSession.SessionID
 	return &GrokLeaderSessionBinding{Conversation: conversation, Session: *boundSession}, nil
+}
+
+func (s *Service) importGrokLeaderHistory(ctx context.Context, conversation *model.Conversation, sessionID string, history []llm.GrokLeaderHistoryMessage) (int, error) {
+	if conversation == nil || conversation.MessageCount != 0 || len(history) == 0 {
+		return 0, nil
+	}
+	existing, err := s.repo.ListAllMessages(ctx, conversation.ID)
+	if err != nil {
+		return 0, err
+	}
+	messageIDs := make(map[string]uint, len(existing))
+	for _, message := range existing {
+		messageIDs[message.PublicID] = message.ID
+	}
+
+	parentID := uint(0)
+	messageCount := 0
+	for index, item := range history {
+		role := strings.ToLower(strings.TrimSpace(item.Role))
+		content := strings.TrimSpace(item.Content)
+		reasoning := strings.TrimSpace(item.ReasoningContent)
+		if (role != "user" && role != "assistant") || (content == "" && reasoning == "") {
+			continue
+		}
+		publicID := grokLeaderHistoryPublicID(conversation.PublicID, sessionID, index)
+		if existingID := messageIDs[publicID]; existingID > 0 {
+			parentID = existingID
+			messageCount++
+			continue
+		}
+		message := &model.Message{
+			ConversationID:   conversation.ID,
+			UserID:           conversation.UserID,
+			PublicID:         publicID,
+			Role:             role,
+			ContentType:      "text",
+			Content:          content,
+			ReasoningContent: reasoning,
+			BranchReason:     "default",
+			Status:           "success",
+		}
+		if role == "assistant" {
+			message.ContentType = "markdown"
+		}
+		if parentID > 0 {
+			value := parentID
+			message.ParentMessageID = &value
+		}
+		if item.CreatedAtUnixMS > 0 {
+			message.CreatedAt = time.UnixMilli(item.CreatedAtUnixMS).UTC()
+			message.UpdatedAt = message.CreatedAt
+		}
+		if err = s.repo.CreateMessage(ctx, message); err != nil {
+			return 0, err
+		}
+		messageIDs[publicID] = message.ID
+		parentID = message.ID
+		messageCount++
+	}
+	if messageCount > 0 {
+		if err = s.repo.IncrementMessageCount(ctx, conversation.ID, messageCount); err != nil {
+			return 0, err
+		}
+	}
+	return messageCount, nil
+}
+
+func grokLeaderHistoryPublicID(conversationPublicID string, sessionID string, index int) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", strings.TrimSpace(conversationPublicID), strings.TrimSpace(sessionID), index)))
+	return fmt.Sprintf("%x", digest[:16])
 }
 
 func (s *Service) resolveGrokLeaderRoute(ctx context.Context, userID uint, conversationID uint, platformModelName string, requestID string) (llm.RouteConfig, error) {

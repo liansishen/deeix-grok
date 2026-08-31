@@ -56,7 +56,7 @@ import { filterAvailableMCPToolIDs } from "@/features/chat/model/chat-mcp-tool-d
 import type { ChatAreaMessage, } from "@/features/chat/types/messages";
 import { useSettingsChatPreferences } from "@/features/settings";
 import { cn } from "@/lib/utils";
-import { getConversation } from "@/shared/api/conversation";
+import { bindGrokLeaderSession, getConversation } from "@/shared/api/conversation";
 import type {
   ConversationDTO,
   ConversationOptions,
@@ -227,6 +227,7 @@ export function AppChatArea() {
   }, [conversationID, items]);
   const [loadedConversation, setLoadedConversation] = React.useState<ConversationDTO | null>(null);
   const [grokSessionBrowserOpen, setGrokSessionBrowserOpen] = React.useState(false);
+  const syncedGrokHistoryRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     const normalizedConversationID = conversationID?.trim() || "";
     if (!normalizedConversationID || activeConversation?.publicID === normalizedConversationID) {
@@ -348,13 +349,73 @@ export function AppChatArea() {
   }, [currentConversation?.publicID, selectedPlatformModelName]);
   const onGrokSessionBound = React.useCallback(
     (binding: GrokLeaderSessionBindingDTO) => {
+      const sessionID = binding.session.sessionID.trim();
+      if (sessionID) {
+        syncedGrokHistoryRef.current.add(`${binding.conversation.publicID}:${sessionID}`);
+      }
       upsertConversation(binding.conversation);
       setLoadedConversation((current) =>
         current?.publicID === binding.conversation.publicID ? binding.conversation : current,
       );
+      reload();
     },
-    [upsertConversation],
+    [reload, upsertConversation],
   );
+  React.useEffect(() => {
+    const conversationPublicID = currentConversation?.publicID.trim() ?? "";
+    const sessionID = currentConversation?.lastResponseID?.trim() ?? "";
+    if (
+      !grokLeaderSelected ||
+      !selectedPlatformModelName ||
+      !conversationPublicID ||
+      !sessionID ||
+      loading ||
+      errorMsg ||
+      messages.length > 0
+    ) {
+      return;
+    }
+
+    const syncKey = `${conversationPublicID}:${sessionID}`;
+    if (syncedGrokHistoryRef.current.has(syncKey)) {
+      return;
+    }
+    syncedGrokHistoryRef.current.add(syncKey);
+    let cancelled = false;
+
+    async function syncHistory() {
+      const token = await resolveAccessToken();
+      if (!token) {
+        throw new Error("missing access token");
+      }
+      const binding = await bindGrokLeaderSession(token, conversationPublicID, {
+        sessionID,
+        platformModelName: selectedPlatformModelName,
+      });
+      if (!cancelled) {
+        onGrokSessionBound(binding);
+      }
+    }
+
+    void syncHistory().catch(() => {
+      if (!cancelled) {
+        toast.error(t("grokSession.browser.bindFailed"));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentConversation?.lastResponseID,
+    currentConversation?.publicID,
+    errorMsg,
+    grokLeaderSelected,
+    loading,
+    messages.length,
+    onGrokSessionBound,
+    selectedPlatformModelName,
+    t,
+  ]);
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
   const refreshModelCatalogForComposer = React.useCallback(async () => {
     await refreshModelCatalog();

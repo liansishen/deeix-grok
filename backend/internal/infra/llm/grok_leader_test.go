@@ -84,3 +84,93 @@ func TestRequestGrokLeaderSessionsUsesWireExtensionAndUnwrapsResult(t *testing.T
 		t.Fatalf("unexpected session origin: %#v", got)
 	}
 }
+
+func TestLoadGrokLeaderSessionCollectsVisibleReplayHistory(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	serverErr := make(chan error, 1)
+	go func() {
+		message, err := readGrokLeaderMessage(server)
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		request := make(map[string]interface{})
+		if err = json.Unmarshal([]byte(grokString(message, "payload")), &request); err != nil {
+			serverErr <- err
+			return
+		}
+		if got := grokString(request, "method"); got != "session/load" {
+			serverErr <- fmt.Errorf("unexpected load method %q", got)
+			return
+		}
+
+		sendACP := func(payload map[string]interface{}) error {
+			raw, marshalErr := json.Marshal(payload)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			return writeGrokLeaderMessage(server, map[string]interface{}{"type": "acp", "payload": string(raw)})
+		}
+		replayUpdate := func(isReplay bool, timestamp int64, kind string, text string, hidden bool) map[string]interface{} {
+			meta := map[string]interface{}{"isReplay": isReplay}
+			if timestamp > 0 {
+				meta["agentTimestampMs"] = timestamp
+			}
+			update := map[string]interface{}{
+				"sessionUpdate": kind,
+				"content":       map[string]interface{}{"type": "text", "text": text},
+			}
+			if hidden {
+				update["_meta"] = map[string]interface{}{"hideFromScrollback": true}
+			}
+			return map[string]interface{}{
+				"jsonrpc": "2.0",
+				"method":  "session/update",
+				"params":  map[string]interface{}{"_meta": meta, "update": update},
+			}
+		}
+		updates := []map[string]interface{}{
+			replayUpdate(false, 0, "user_message_chunk", "ignored", false),
+			replayUpdate(true, 100, "user_message_chunk", "Hello", false),
+			replayUpdate(true, 110, "agent_thought_chunk", "Think ", false),
+			replayUpdate(true, 111, "agent_thought_chunk", "carefully", false),
+			replayUpdate(true, 120, "agent_message_chunk", "Answer ", false),
+			replayUpdate(true, 121, "agent_message_chunk", "one.", false),
+			replayUpdate(true, 0, "user_message_chunk", "hidden", true),
+			replayUpdate(true, 0, "agent_message_chunk", "hidden answer", false),
+			replayUpdate(true, 200, "user_message_chunk", "Again", false),
+			replayUpdate(true, 210, "agent_message_chunk", "Done", false),
+		}
+		for _, update := range updates {
+			if err = sendACP(update); err != nil {
+				serverErr <- err
+				return
+			}
+		}
+		err = sendACP(map[string]interface{}{"jsonrpc": "2.0", "id": 3, "result": map[string]interface{}{}})
+		serverErr <- err
+	}()
+
+	history, err := loadGrokLeaderSession(client, 3, "session-1", "/workspace")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if err = <-serverErr; err != nil {
+		t.Fatalf("serve load response: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected four visible messages, got %d: %#v", len(history), history)
+	}
+	if history[0].Role != "user" || history[0].Content != "Hello" || history[0].CreatedAtUnixMS != 100 {
+		t.Fatalf("unexpected first user message: %#v", history[0])
+	}
+	if history[1].Role != "assistant" || history[1].ReasoningContent != "Think carefully" || history[1].Content != "Answer one." || history[1].CreatedAtUnixMS != 110 {
+		t.Fatalf("unexpected first assistant message: %#v", history[1])
+	}
+	if history[2].Role != "user" || history[2].Content != "Again" || history[3].Role != "assistant" || history[3].Content != "Done" {
+		t.Fatalf("unexpected second turn: %#v", history[2:])
+	}
+}

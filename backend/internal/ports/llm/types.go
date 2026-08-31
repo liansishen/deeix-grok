@@ -276,6 +276,14 @@ type ModelItem struct {
 	OwnedBy string
 }
 
+// GrokLeaderHistoryMessage 是 session/load replay 中可展示的对话消息。
+type GrokLeaderHistoryMessage struct {
+	Role             string
+	Content          string
+	ReasoningContent string
+	CreatedAtUnixMS  int64
+}
+
 // GrokLeaderSession 是共享 Grok leader roster 中的会话摘要。
 type GrokLeaderSession struct {
 	SessionID        string
@@ -291,6 +299,7 @@ type GrokLeaderSession struct {
 	LastChangeUnixMS int64
 	Origin           string
 	OriginHost       string
+	History          []GrokLeaderHistoryMessage
 }
 
 // UpstreamError 是上游 HTTP 调用错误。
