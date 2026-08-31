@@ -11,10 +11,13 @@ import type {
   ConversationRunStatusDTO,
   BatchSetConversationProjectRequest,
   BatchSetConversationProjectResult,
+  BindGrokLeaderSessionRequest,
   ContextArtifactDTO,
   ConversationDefaultModelCandidateDTO,
   ConversationDTO,
   ConversationExportDTO,
+  GrokLeaderSessionBindingDTO,
+  GrokLeaderSessionDTO,
   ConversationPreviewMessageDTO,
   ConversationProjectDTO,
   ConversationProjectFilter,
@@ -572,6 +575,31 @@ export async function getConversation(
     {
       accessToken,
     },
+    true,
+  );
+}
+
+export async function listGrokLeaderSessions(
+  accessToken: string,
+  platformModelName: string,
+  signal?: AbortSignal,
+): Promise<GrokLeaderSessionDTO[]> {
+  const params = new URLSearchParams({ model: platformModelName });
+  return authedRequest<GrokLeaderSessionDTO[]>(
+    `/api/v1/grok/leader/sessions?${params.toString()}`,
+    { accessToken, signal },
+    true,
+  );
+}
+
+export async function bindGrokLeaderSession(
+  accessToken: string,
+  conversationPublicID: string,
+  payload: BindGrokLeaderSessionRequest,
+): Promise<GrokLeaderSessionBindingDTO> {
+  return authedRequest<GrokLeaderSessionBindingDTO>(
+    `/api/v1/conversations/${pathParam(conversationPublicID)}/grok-session`,
+    { method: "POST", accessToken, body: payload },
     true,
   );
 }

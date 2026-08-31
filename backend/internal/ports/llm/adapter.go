@@ -32,6 +32,8 @@ var (
 	ErrUnsupportedAdapter = errors.New("unsupported llm adapter")
 	// ErrUnsupportedStream 表示协议存在但不支持真实流式输出。
 	ErrUnsupportedStream = errors.New("unsupported llm stream")
+	// ErrGrokLeaderSessionNotFound 表示目标会话不在共享 leader roster 中。
+	ErrGrokLeaderSessionNotFound = errors.New("Grok leader session not found")
 )
 
 // NormalizeAdapter 规范化协议名；空值按历史默认使用 openai_responses，未知值保留给校验层处理。

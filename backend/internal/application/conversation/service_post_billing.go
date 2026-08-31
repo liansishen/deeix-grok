@@ -12,6 +12,7 @@ import (
 // postBillingCompactionTask 保存主调用结算后执行上下文压缩所需的运行信息。
 type postBillingCompactionTask struct {
 	Async          bool
+	PreserveResponseID bool
 	Input          appcompact.MaybeCompactConversationInput
 	ConversationID uint
 	UserID         uint
@@ -47,7 +48,9 @@ func (s *Service) runPostBillingCompaction(task *postBillingCompactionTask, mess
 		}
 		if snapshot != nil {
 			s.invalidateSnapshotCache(task.ConversationID)
-			_ = s.repo.UpdateConversationLastResponseID(ctx, task.ConversationID, "")
+			if !task.PreserveResponseID {
+				_ = s.repo.UpdateConversationLastResponseID(ctx, task.ConversationID, "")
+			}
 			s.persistSnapshotContextArtifact(ctx, snapshotContextArtifactInput{
 				ConversationID: task.ConversationID,
 				UserID:         task.UserID,

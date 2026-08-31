@@ -18,7 +18,34 @@
   "grokSession": {
     "running": "Grok task running",
     "ready": "Grok session ready to continue",
-    "unbound": "Grok session not bound"
+    "unbound": "Grok session not bound",
+    "activity": {
+      "working": "Working",
+      "idle": "Idle",
+      "needsInput": "Needs input",
+      "dormant": "Dormant",
+      "completed": "Completed",
+      "dead": "Unavailable",
+      "unknown": "Unknown"
+    },
+    "browser": {
+      "open": "Browse Grok sessions",
+      "title": "Grok sessions",
+      "description": "Select an existing session from the shared Grok leader to continue it in this conversation.",
+      "refresh": "Refresh sessions",
+      "loading": "Loading sessions...",
+      "loadFailed": "Could not load Grok sessions",
+      "retry": "Retry",
+      "empty": "No discoverable Grok sessions are available.",
+      "resident": "Resident",
+      "worktree": "Worktree",
+      "model": "Model: {model}",
+      "updated": "Updated: {time}",
+      "current": "Bound",
+      "bind": "Bind",
+      "bindSuccess": "Grok session bound",
+      "bindFailed": "Could not bind Grok session"
+    }
   },
   "temporary": {
     "title": "Temporary chat",

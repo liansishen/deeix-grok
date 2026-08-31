@@ -55,6 +55,167 @@ func (a *grokLeaderAdapter) ListModels(ctx context.Context, route RouteConfig) (
 	return []ModelItem{{ID: model, OwnedBy: "grok"}}, nil
 }
 
+type grokLeaderRosterResponse struct {
+	Sessions []grokLeaderRosterEntry `json:"sessions"`
+}
+
+type grokLeaderRosterEntry struct {
+	SessionID        string                 `json:"sessionId"`
+	Title            string                 `json:"title"`
+	CWD              string                 `json:"cwd"`
+	IsWorktree       bool                   `json:"isWorktree"`
+	ModelID          string                 `json:"modelId"`
+	ReasoningEffort  string                 `json:"reasoningEffort"`
+	Yolo             bool                   `json:"yolo"`
+	Activity         string                 `json:"activity"`
+	LastTurnSummary  string                 `json:"lastTurnSummary"`
+	Resident         bool                   `json:"resident"`
+	LastChangeUnixMS int64                  `json:"lastChangeUnixMs"`
+	Origin           grokLeaderRosterOrigin `json:"origin"`
+}
+
+type grokLeaderRosterOrigin struct {
+	Kind string `json:"kind"`
+	Host string `json:"host"`
+}
+
+func (a *grokLeaderAdapter) listSessions(ctx context.Context, route RouteConfig) ([]GrokLeaderSession, error) {
+	requestCtx, cancel := grokLeaderRequestContext(ctx, route)
+	defer cancel()
+	conn, err := openGrokLeaderConnection(requestCtx, route)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	stopWatching := watchGrokLeaderContext(requestCtx, conn)
+	defer stopWatching()
+	return requestGrokLeaderSessions(conn, 2)
+}
+
+func (a *grokLeaderAdapter) bindSession(ctx context.Context, route RouteConfig, conversationSessionKey string, sessionID string) (*GrokLeaderSession, error) {
+	key := strings.TrimSpace(conversationSessionKey)
+	targetID := strings.TrimSpace(sessionID)
+	if key == "" || targetID == "" {
+		return nil, ErrGrokLeaderSessionNotFound
+	}
+	requestCtx, cancel := grokLeaderRequestContext(ctx, route)
+	defer cancel()
+	session := a.sessionFor(key)
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	conn, err := openGrokLeaderConnection(requestCtx, route)
+	if err != nil {
+		return nil, err
+	}
+	stopWatching := watchGrokLeaderContext(requestCtx, conn)
+	defer stopWatching()
+	sessions, err := requestGrokLeaderSessions(conn, 2)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	entry, ok := findGrokLeaderSession(sessions, targetID)
+	if !ok {
+		_ = conn.Close()
+		return nil, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, targetID)
+	}
+	if err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if session.conn != nil {
+		_ = session.conn.Close()
+	}
+	session.conn = conn
+	session.sessionID = entry.SessionID
+	session.nextID = 4
+	return &entry, nil
+}
+
+func grokLeaderRequestContext(ctx context.Context, route RouteConfig) (context.Context, context.CancelFunc) {
+	if timeout := resolveReadTimeout(route.ReadTimeoutMS); timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return ctx, func() {}
+}
+
+func watchGrokLeaderContext(ctx context.Context, conn net.Conn) func() {
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-done:
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped
+	}
+}
+
+func requestGrokLeaderSessions(conn net.Conn, requestID int) ([]GrokLeaderSession, error) {
+	if err := sendGrokACPRequest(conn, requestID, "x.ai/sessions/list", map[string]interface{}{}); err != nil {
+		return nil, err
+	}
+	response, err := readGrokACPResponse(conn, requestID)
+	if err != nil {
+		return nil, fmt.Errorf("list Grok leader sessions: %w", err)
+	}
+	result, ok := grokMapAt(response, "result")
+	if !ok {
+		return nil, errors.New("Grok leader sessions response did not contain a result")
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode Grok leader sessions result: %w", err)
+	}
+	var roster grokLeaderRosterResponse
+	if err = json.Unmarshal(payload, &roster); err != nil {
+		return nil, fmt.Errorf("decode Grok leader sessions result: %w", err)
+	}
+	sessions := make([]GrokLeaderSession, 0, len(roster.Sessions))
+	for _, entry := range roster.Sessions {
+		entry.SessionID = strings.TrimSpace(entry.SessionID)
+		entry.CWD = strings.TrimSpace(entry.CWD)
+		entry.Activity = strings.TrimSpace(entry.Activity)
+		if entry.SessionID == "" || entry.CWD == "" || entry.Activity == "" {
+			return nil, errors.New("Grok leader sessions response contained an invalid session")
+		}
+		sessions = append(sessions, GrokLeaderSession{
+			SessionID: entry.SessionID, Title: strings.TrimSpace(entry.Title), CWD: entry.CWD,
+			IsWorktree: entry.IsWorktree, ModelID: strings.TrimSpace(entry.ModelID), ReasoningEffort: strings.TrimSpace(entry.ReasoningEffort),
+			Yolo: entry.Yolo, Activity: entry.Activity, LastTurnSummary: strings.TrimSpace(entry.LastTurnSummary), Resident: entry.Resident,
+			LastChangeUnixMS: entry.LastChangeUnixMS, Origin: strings.TrimSpace(entry.Origin.Kind), OriginHost: strings.TrimSpace(entry.Origin.Host),
+		})
+	}
+	return sessions, nil
+}
+
+func findGrokLeaderSession(sessions []GrokLeaderSession, sessionID string) (GrokLeaderSession, bool) {
+	for _, session := range sessions {
+		if session.SessionID == sessionID {
+			return session, true
+		}
+	}
+	return GrokLeaderSession{}, false
+}
+
+func loadGrokLeaderSession(conn net.Conn, requestID int, sessionID string, cwd string) error {
+	if err := sendGrokACPRequest(conn, requestID, "session/load", map[string]interface{}{
+		"sessionId": sessionID, "cwd": cwd, "mcpServers": []interface{}{},
+	}); err != nil {
+		return err
+	}
+	if _, err := readGrokACPResponse(conn, requestID); err != nil {
+		return fmt.Errorf("load Grok leader session %q: %w", sessionID, err)
+	}
+	return nil
+}
+
 func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input GenerateInput, onEvent func(GenerateStreamEvent) error) (*GenerateOutput, error) {
 	requestCtx := ctx
 	var cancel context.CancelFunc = func() {}
@@ -78,15 +239,8 @@ func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input Ge
 	if err != nil {
 		return nil, err
 	}
-	connectionDone := make(chan struct{})
-	go func() {
-		select {
-		case <-requestCtx.Done():
-			_ = conn.Close()
-		case <-connectionDone:
-		}
-	}()
-	defer close(connectionDone)
+	stopWatching := watchGrokLeaderContext(requestCtx, conn)
+	defer stopWatching()
 
 	output := &GenerateOutput{ResponseID: sessionID}
 	if err := sendGrokACPRequest(conn, requestID, "session/prompt", map[string]interface{}{
@@ -102,9 +256,6 @@ func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input Ge
 	}
 	if err := consumeGrokPrompt(conn, requestID, output, onEvent); err != nil {
 		a.dropConnection(session, conn)
-		if session != nil && input.PreviousResponseID != "" && output.Text == "" && isGrokMissingSessionError(err) {
-			return a.retryWithNewSession(requestCtx, route, input, onEvent, session)
-		}
 		return nil, err
 	}
 
@@ -129,10 +280,21 @@ func (a *grokLeaderAdapter) acquireConnection(ctx context.Context, route RouteCo
 		persistedID = strings.TrimSpace(session.sessionID)
 	}
 	if persistedID != "" {
-		if session != nil {
-			session.sessionID = persistedID
+		sessions, listErr := requestGrokLeaderSessions(conn, 2)
+		if listErr != nil {
+			_ = conn.Close()
+			return nil, "", 0, listErr
 		}
-		return conn, persistedID, 3, nil
+		entry, ok := findGrokLeaderSession(sessions, persistedID)
+		if !ok {
+			_ = conn.Close()
+			return nil, "", 0, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, persistedID)
+		}
+		if err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
+			_ = conn.Close()
+			return nil, "", 0, err
+		}
+		return conn, entry.SessionID, 4, nil
 	}
 	sessionID, err := createGrokSession(conn, route)
 	if err != nil {
@@ -140,44 +302,6 @@ func (a *grokLeaderAdapter) acquireConnection(ctx context.Context, route RouteCo
 		return nil, "", 0, err
 	}
 	return conn, sessionID, 3, nil
-}
-
-func (a *grokLeaderAdapter) retryWithNewSession(ctx context.Context, route RouteConfig, input GenerateInput, onEvent func(GenerateStreamEvent) error, session *grokLeaderSession) (*GenerateOutput, error) {
-	conn, err := openGrokLeaderConnection(ctx, route)
-	if err != nil {
-		return nil, err
-	}
-	sessionID, err := createGrokSession(conn, route)
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	output := &GenerateOutput{ResponseID: sessionID}
-	connectionDone := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-connectionDone:
-		}
-	}()
-	defer close(connectionDone)
-	if err := sendGrokACPRequest(conn, 3, "session/prompt", map[string]interface{}{
-		"sessionId": sessionID,
-		"prompt":    []map[string]string{{"type": "text", "text": grokPromptText(input)}},
-		"_meta":     map[string]interface{}{"screenMode": "headless"},
-	}); err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	if err := consumeGrokPrompt(conn, 3, output, onEvent); err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
-	session.conn = conn
-	session.sessionID = sessionID
-	session.nextID = 4
-	return output, nil
 }
 
 func (a *grokLeaderAdapter) sessionFor(key string) *grokLeaderSession {
@@ -211,15 +335,8 @@ func openGrokLeaderConnection(ctx context.Context, route RouteConfig) (net.Conn,
 	if err != nil {
 		return nil, fmt.Errorf("connect to Grok leader %q: %w", socketPath, err)
 	}
-	connectionDone := make(chan struct{})
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = conn.Close()
-		case <-connectionDone:
-		}
-	}()
-	defer close(connectionDone)
+	stopWatching := watchGrokLeaderContext(ctx, conn)
+	defer stopWatching()
 
 	if err := writeGrokLeaderMessage(conn, map[string]interface{}{
 		"type": "register", "client_type": grokLeaderClientType, "mode": "stdio",
@@ -273,11 +390,6 @@ func createGrokSession(conn net.Conn, route RouteConfig) (string, error) {
 		return "", errors.New("Grok ACP session/new response did not contain a session id")
 	}
 	return sessionID, nil
-}
-
-func isGrokMissingSessionError(err error) bool {
-	message := strings.ToLower(strings.TrimSpace(err.Error()))
-	return strings.Contains(message, "session") && (strings.Contains(message, "not found") || strings.Contains(message, "unknown") || strings.Contains(message, "invalid"))
 }
 
 func (a *grokLeaderAdapter) Close() {

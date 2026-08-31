@@ -51,6 +51,8 @@ var (
 	ErrUnsupportedAdapter = portllm.ErrUnsupportedAdapter
 	// ErrUnsupportedStream 表示协议存在但不支持真实流式输出。
 	ErrUnsupportedStream = portllm.ErrUnsupportedStream
+	// ErrGrokLeaderSessionNotFound 表示目标会话不在共享 leader roster 中。
+	ErrGrokLeaderSessionNotFound = portllm.ErrGrokLeaderSessionNotFound
 )
 
 // 请求/响应数据模型。
@@ -71,6 +73,7 @@ type (
 	ReasoningDelta        = portllm.ReasoningDelta
 	GenerateStreamEvent   = portllm.GenerateStreamEvent
 	ModelItem             = portllm.ModelItem
+	GrokLeaderSession      = portllm.GrokLeaderSession
 	UpstreamError         = portllm.UpstreamError
 	AcceptedRequestError  = portllm.AcceptedRequestError
 	UpstreamDebugSnapshot = portllm.UpstreamDebugSnapshot

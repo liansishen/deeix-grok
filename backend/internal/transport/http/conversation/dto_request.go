@@ -7,6 +7,12 @@ type CreateConversationRequest struct {
 	ProjectID string `json:"projectID,omitempty" binding:"omitempty,max=32"`
 }
 
+// BindGrokLeaderSessionRequest 绑定已有 Grok leader 会话请求。
+type BindGrokLeaderSessionRequest struct {
+	SessionID         string `json:"sessionID" binding:"required,max=128"`
+	PlatformModelName string `json:"platformModelName" binding:"required,max=128"`
+}
+
 // CreateConversationProjectRequest 创建会话项目请求。
 type CreateConversationProjectRequest struct {
 	Name                    string   `json:"name" binding:"required,max=80"`

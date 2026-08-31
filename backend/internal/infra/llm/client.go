@@ -613,6 +613,36 @@ func (c *Client) GenerateStream(
 	return adapter.GenerateStream(ctx, route, input, onEvent)
 }
 
+// ListGrokLeaderSessions 返回共享 leader 当前可发现的会话。
+func (c *Client) ListGrokLeaderSessions(ctx context.Context, route RouteConfig) ([]GrokLeaderSession, error) {
+	adapter, err := c.grokLeaderAdapter(route)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.listSessions(ctx, route)
+}
+
+// BindGrokLeaderSession 加载已有会话并将连接绑定到 Deeix 会话键。
+func (c *Client) BindGrokLeaderSession(ctx context.Context, route RouteConfig, conversationSessionKey string, sessionID string) (*GrokLeaderSession, error) {
+	adapter, err := c.grokLeaderAdapter(route)
+	if err != nil {
+		return nil, err
+	}
+	return adapter.bindSession(ctx, route, conversationSessionKey, sessionID)
+}
+
+func (c *Client) grokLeaderAdapter(route RouteConfig) (*grokLeaderAdapter, error) {
+	adapter, err := c.adapterFor(route)
+	if err != nil {
+		return nil, err
+	}
+	grokAdapter, ok := adapter.(*grokLeaderAdapter)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedAdapter, route.Protocol)
+	}
+	return grokAdapter, nil
+}
+
 // ListModels 调用上游 models 目录接口。
 func (c *Client) ListModels(ctx context.Context, route RouteConfig) ([]ModelItem, error) {
 	adapter, err := c.adapterFor(route)

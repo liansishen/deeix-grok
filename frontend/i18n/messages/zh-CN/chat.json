@@ -18,7 +18,34 @@
   "grokSession": {
     "running": "Grok 任务运行中",
     "ready": "Grok 会话可继续",
-    "unbound": "Grok 会话尚未绑定"
+    "unbound": "Grok 会话尚未绑定",
+    "activity": {
+      "working": "运行中",
+      "idle": "空闲",
+      "needsInput": "等待输入",
+      "dormant": "未驻留",
+      "completed": "已完成",
+      "dead": "不可用",
+      "unknown": "未知"
+    },
+    "browser": {
+      "open": "浏览 Grok 会话",
+      "title": "Grok 会话",
+      "description": "从共享 Grok leader 中选择已有会话，并在当前对话中继续。",
+      "refresh": "刷新会话",
+      "loading": "正在加载会话...",
+      "loadFailed": "Grok 会话加载失败",
+      "retry": "重试",
+      "empty": "当前没有可发现的 Grok 会话。",
+      "resident": "已驻留",
+      "worktree": "工作树",
+      "model": "模型：{model}",
+      "updated": "更新于：{time}",
+      "current": "已绑定",
+      "bind": "绑定",
+      "bindSuccess": "Grok 会话已绑定",
+      "bindFailed": "Grok 会话绑定失败"
+    }
   },
   "temporary": {
     "title": "临时对话",

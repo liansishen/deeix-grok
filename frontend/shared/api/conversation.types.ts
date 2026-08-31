@@ -49,6 +49,32 @@ import type { UserStorageQuotaDTO } from "@/shared/api/file.types";
 
 export type ConversationDTO = ConversationResponse;
 
+export type GrokLeaderSessionDTO = {
+  sessionID: string;
+  title: string;
+  cwd: string;
+  isWorktree: boolean;
+  modelID: string;
+  reasoningEffort: string;
+  yolo: boolean;
+  activity: "working" | "idle" | "needs_input" | "dormant" | "completed" | "dead" | string;
+  lastTurnSummary: string;
+  resident: boolean;
+  lastChangeUnixMS: number;
+  origin: string;
+  originHost: string;
+};
+
+export type BindGrokLeaderSessionRequest = {
+  sessionID: string;
+  platformModelName: string;
+};
+
+export type GrokLeaderSessionBindingDTO = {
+  conversation: ConversationDTO;
+  session: GrokLeaderSessionDTO;
+};
+
 export type ConversationSearchResultDTO = ConversationSearchResultResponse;
 
 export type ActiveConversationRunSnapshot = {

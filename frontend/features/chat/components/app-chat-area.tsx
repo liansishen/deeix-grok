@@ -1,6 +1,6 @@
 "use client";
 
-import { Glasses, Radio } from "lucide-react";
+import { Glasses, ListTree, Radio } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import * as React from "react";
@@ -15,11 +15,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ConversationShareDialog,
   sharePatchFromDTO,
   useSidebarConversationField,
 } from "@/entities/conversation";
+import { GrokSessionBrowserDialog } from "@/features/chat/components/grok-session-browser-dialog";
 import { ChatArea, ChatAreaLoadError, ChatAreaSkeleton } from "@/features/chat/components/sections/chat-area";
 import { ChatArtifactWorkspace } from "@/features/chat/components/sections/chat-artifact";
 import { ChatEmptyState } from "@/features/chat/components/sections/chat-empty";
@@ -54,7 +57,11 @@ import type { ChatAreaMessage, } from "@/features/chat/types/messages";
 import { useSettingsChatPreferences } from "@/features/settings";
 import { cn } from "@/lib/utils";
 import { getConversation } from "@/shared/api/conversation";
-import type { ConversationDTO, ConversationOptions } from "@/shared/api/conversation.types";
+import type {
+  ConversationDTO,
+  ConversationOptions,
+  GrokLeaderSessionBindingDTO,
+} from "@/shared/api/conversation.types";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { DeleteFilesOption } from "@/shared/components/delete-files-option";
@@ -68,10 +75,19 @@ const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
 const EMPTY_LIST: never[] = [];
 const TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX = 48;
 
-function GrokSessionStatus({ conversation, busy }: { conversation: ConversationDTO | null; busy: boolean }) {
+function GrokSessionStatus({
+  conversation,
+  busy,
+  enabled,
+  onBrowse,
+}: {
+  conversation: ConversationDTO | null;
+  busy: boolean;
+  enabled: boolean;
+  onBrowse: () => void;
+}) {
   const t = useTranslations("chat.grokSession");
-  const provider = `${conversation?.provider ?? ""} ${conversation?.model ?? ""}`.toLowerCase();
-  if (!conversation || !provider.includes("grok")) {
+  if (!conversation || !enabled) {
     return null;
   }
 
@@ -86,6 +102,21 @@ function GrokSessionStatus({ conversation, busy }: { conversation: ConversationD
           {sessionID}
         </code>
       ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="ml-auto size-7"
+            aria-label={t("browser.open")}
+            onClick={onBrowse}
+          >
+            <ListTree className="size-3.5" aria-hidden />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("browser.open")}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -195,6 +226,7 @@ export function AppChatArea() {
     return items.find((item) => item.publicID === conversationID) ?? null;
   }, [conversationID, items]);
   const [loadedConversation, setLoadedConversation] = React.useState<ConversationDTO | null>(null);
+  const [grokSessionBrowserOpen, setGrokSessionBrowserOpen] = React.useState(false);
   React.useEffect(() => {
     const normalizedConversationID = conversationID?.trim() || "";
     if (!normalizedConversationID || activeConversation?.publicID === normalizedConversationID) {
@@ -309,6 +341,19 @@ export function AppChatArea() {
   const selectedModel = React.useMemo(
     () => modelOptions.find((item) => item.platformModelName === selectedPlatformModelName) ?? null,
     [modelOptions, selectedPlatformModelName],
+  );
+  const grokLeaderSelected = selectedModel?.protocols.includes("grok_leader") ?? false;
+  React.useEffect(() => {
+    setGrokSessionBrowserOpen(false);
+  }, [currentConversation?.publicID, selectedPlatformModelName]);
+  const onGrokSessionBound = React.useCallback(
+    (binding: GrokLeaderSessionBindingDTO) => {
+      upsertConversation(binding.conversation);
+      setLoadedConversation((current) =>
+        current?.publicID === binding.conversation.publicID ? binding.conversation : current,
+      );
+    },
+    [upsertConversation],
   );
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
   const refreshModelCatalogForComposer = React.useCallback(async () => {
@@ -761,6 +806,12 @@ export function AppChatArea() {
           requiresExitConfirmation={temporaryRuntime.sending || temporaryRuntime.messages.length > 0}
         />
       ) : null}
+      <GrokSessionStatus
+        conversation={currentConversation}
+        busy={composerSending}
+        enabled={grokLeaderSelected}
+        onBrowse={() => setGrokSessionBrowserOpen(true)}
+      />
       {shouldUseCenteredComposer ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ChatEmptyState
@@ -799,8 +850,7 @@ export function AppChatArea() {
                 <ChatAreaLoadError onRefresh={reload} onNewConversation={onNewConversationFromLoadError} />
               ) : (
                 <>
-                  <GrokSessionStatus conversation={currentConversation} busy={composerSending} />
-                <ChatArea
+                  <ChatArea
                   title={temporaryMode ? t("temporary.title") : activeConversationTitle}
                   starred={activeConversationStarred}
                   canOperateConversation={temporaryMode ? false : canOperateConversation}
@@ -902,6 +952,17 @@ export function AppChatArea() {
         onDownload={screenshot.downloadPreview}
         onCopy={screenshot.copyPreviewToClipboard}
       />
+
+      {currentConversation && grokLeaderSelected && selectedPlatformModelName ? (
+        <GrokSessionBrowserDialog
+          open={grokSessionBrowserOpen}
+          conversation={currentConversation}
+          platformModelName={selectedPlatformModelName}
+          busy={composerSending}
+          onOpenChange={setGrokSessionBrowserOpen}
+          onBound={onGrokSessionBound}
+        />
+      ) : null}
 
       {canOperateConversation ? (
         <>

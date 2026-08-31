@@ -276,6 +276,23 @@ type ModelItem struct {
 	OwnedBy string
 }
 
+// GrokLeaderSession 是共享 Grok leader roster 中的会话摘要。
+type GrokLeaderSession struct {
+	SessionID        string
+	Title            string
+	CWD              string
+	IsWorktree       bool
+	ModelID          string
+	ReasoningEffort  string
+	Yolo             bool
+	Activity         string
+	LastTurnSummary  string
+	Resident         bool
+	LastChangeUnixMS int64
+	Origin           string
+	OriginHost       string
+}
+
 // UpstreamError 是上游 HTTP 调用错误。
 type UpstreamError struct {
 	StatusCode int

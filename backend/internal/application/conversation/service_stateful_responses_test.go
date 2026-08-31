@@ -48,6 +48,15 @@ func TestResolvePreviousResponseIDOnlyEnablesKnownSafeRoutes(t *testing.T) {
 			t.Fatalf("expected retry branch disabled, got %q", got)
 		}
 	})
+
+	t.Run("Grok leader stays on the bound session for retry branches", func(t *testing.T) {
+		got := resolvePreviousResponseID(&channel.ResolvedRoute{
+			Protocol: llm.AdapterGrokLeader,
+		}, "retry", "01a05662-f90a-7a50-9eb9-99294f3b0fdb")
+		if got != "01a05662-f90a-7a50-9eb9-99294f3b0fdb" {
+			t.Fatalf("expected bound Grok session id, got %q", got)
+		}
+	})
 }
 
 func TestSupportsPreviousResponseIDRouteOnlyAllowsOfficialOpenAIResponses(t *testing.T) {
@@ -68,6 +77,20 @@ func TestSupportsPreviousResponseIDRouteOnlyAllowsOfficialOpenAIResponses(t *tes
 		BaseURL:  "https://api.openai.com/v1",
 	}) {
 		t.Fatalf("expected non-Responses route to disable previous_response_id")
+	}
+}
+
+func TestResolveStatefulPreviousResponseIDGrokLeaderDoesNotRequirePromptFingerprint(t *testing.T) {
+	decision := resolveStatefulPreviousResponseID(
+		&channel.ResolvedRoute{Protocol: llm.AdapterGrokLeader},
+		"default",
+		"01a05662-f90a-7a50-9eb9-99294f3b0fdb",
+		"",
+		"different-current-fingerprint",
+		map[string]interface{}{"prompt_cache_key": "ignored-for-leader"},
+	)
+	if decision.PreviousResponseID != "01a05662-f90a-7a50-9eb9-99294f3b0fdb" {
+		t.Fatalf("expected bound Grok session id, got %#v", decision)
 	}
 }
 

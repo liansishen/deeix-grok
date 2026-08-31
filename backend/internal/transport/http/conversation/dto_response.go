@@ -9,6 +9,7 @@ import (
 	appprocessing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/processing"
 	appupload "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/upload"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
 
 // ---------- Conversation ----------
@@ -89,6 +90,38 @@ type ConversationDefaultModelCandidateResponse struct {
 	PlatformModelName string     `json:"platformModelName"`
 	Source            string     `json:"source"`
 	UsedAt            *time.Time `json:"usedAt" extensions:"x-nullable,!x-omitempty"`
+}
+
+// GrokLeaderSessionResponse 返回共享 leader 会话摘要。
+type GrokLeaderSessionResponse struct {
+	SessionID        string `json:"sessionID"`
+	Title            string `json:"title"`
+	CWD              string `json:"cwd"`
+	IsWorktree       bool   `json:"isWorktree"`
+	ModelID          string `json:"modelID"`
+	ReasoningEffort  string `json:"reasoningEffort"`
+	Yolo             bool   `json:"yolo"`
+	Activity         string `json:"activity"`
+	LastTurnSummary  string `json:"lastTurnSummary"`
+	Resident         bool   `json:"resident"`
+	LastChangeUnixMS int64  `json:"lastChangeUnixMS"`
+	Origin           string `json:"origin"`
+	OriginHost       string `json:"originHost"`
+}
+
+// GrokLeaderSessionBindingResponse 返回绑定结果。
+type GrokLeaderSessionBindingResponse struct {
+	Conversation ConversationResponse      `json:"conversation"`
+	Session      GrokLeaderSessionResponse `json:"session"`
+}
+
+func toGrokLeaderSessionResponse(item llm.GrokLeaderSession) GrokLeaderSessionResponse {
+	return GrokLeaderSessionResponse{
+		SessionID: item.SessionID, Title: item.Title, CWD: item.CWD, IsWorktree: item.IsWorktree,
+		ModelID: item.ModelID, ReasoningEffort: item.ReasoningEffort, Yolo: item.Yolo, Activity: item.Activity,
+		LastTurnSummary: item.LastTurnSummary, Resident: item.Resident, LastChangeUnixMS: item.LastChangeUnixMS,
+		Origin: item.Origin, OriginHost: item.OriginHost,
+	}
 }
 
 func toConversationResponse(item *model.Conversation) ConversationResponse {
@@ -1473,6 +1506,18 @@ type ConversationCreateResponseDoc struct {
 type ConversationDefaultModelCandidateResponseDoc struct {
 	ErrorMsg string                                    `json:"errorMsg"`
 	Data     ConversationDefaultModelCandidateResponse `json:"data"`
+}
+
+// GrokLeaderSessionListResponseDoc leader 会话列表响应文档。
+type GrokLeaderSessionListResponseDoc struct {
+	ErrorMsg string                      `json:"errorMsg"`
+	Data     []GrokLeaderSessionResponse `json:"data"`
+}
+
+// GrokLeaderSessionBindingResponseDoc leader 会话绑定响应文档。
+type GrokLeaderSessionBindingResponseDoc struct {
+	ErrorMsg string                           `json:"errorMsg"`
+	Data     GrokLeaderSessionBindingResponse `json:"data"`
 }
 
 // ConversationExportResponseDoc 会话导出响应文档。

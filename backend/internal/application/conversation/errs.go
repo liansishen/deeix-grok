@@ -95,6 +95,10 @@ var (
 	ErrModelRouteNotConfigured = errors.New("model route not configured")
 	// ErrModelAccessDenied 当前用户无权使用此模型。
 	ErrModelAccessDenied = errors.New("model access denied by group policy")
+	// ErrGrokLeaderModelRequired 选择的模型没有使用 Grok leader 协议。
+	ErrGrokLeaderModelRequired = errors.New("Grok leader model required")
+	// ErrGrokLeaderSessionNotFound 目标会话不在共享 leader roster 中。
+	ErrGrokLeaderSessionNotFound = errors.New("Grok leader session not found")
 	// ErrUpstreamRequestFailed 上游请求失败。
 	ErrUpstreamRequestFailed = errors.New("upstream request failed")
 	// ErrGeneratedMediaArtifactUnavailable 上游已完成媒体生成，但结果制品暂时无法获取或校验。

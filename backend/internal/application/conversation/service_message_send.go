@@ -475,7 +475,9 @@ func (s *Service) sendMessageInternal(
 		if preflightSnapshot != nil {
 			prefetch.snapshot = preflightSnapshot
 			s.invalidateSnapshotCache(input.ConversationID)
-			_ = s.repo.UpdateConversationLastResponseID(ctx, input.ConversationID, "")
+			if !isGrokLeaderRoute(route) {
+				_ = s.repo.UpdateConversationLastResponseID(ctx, input.ConversationID, "")
+			}
 			s.persistSnapshotContextArtifact(ctx, snapshotContextArtifactInput{
 				ConversationID: input.ConversationID,
 				UserID:         input.UserID,
@@ -1675,6 +1677,7 @@ func (s *Service) sendMessageInternal(
 		compactInput.PlatformModelName = compactPlatformModelName
 		postBillingCompaction = &postBillingCompactionTask{
 			Async:          compactCfg.CompactAsyncEnabled,
+			PreserveResponseID: isGrokLeaderRoute(route),
 			Input:          compactInput,
 			ConversationID: input.ConversationID,
 			UserID:         input.UserID,

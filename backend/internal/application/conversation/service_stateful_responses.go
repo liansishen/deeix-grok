@@ -23,6 +23,13 @@ func resolveStatefulPreviousResponseID(
 	currentPrefixFingerprint string,
 	options map[string]interface{},
 ) statefulResponseDecision {
+	if isGrokLeaderRoute(route) {
+		responseID := resolvePreviousResponseID(route, branchReason, lastResponseID)
+		if responseID == "" {
+			return statefulResponseDecision{DisabledReason: "route_or_branch_not_eligible"}
+		}
+		return statefulResponseDecision{PreviousResponseID: responseID}
+	}
 	if usesExplicitOpenAIPromptCacheMessageBreakpoints(route, options) {
 		return statefulResponseDecision{DisabledReason: "explicit_prompt_cache"}
 	}
@@ -46,10 +53,13 @@ func resolveStatefulPreviousResponseID(
 
 func resolvePreviousResponseID(route *channel.ResolvedRoute, branchReason string, lastResponseID string) string {
 	responseID := strings.TrimSpace(lastResponseID)
-	if responseID == "" || !strings.EqualFold(strings.TrimSpace(branchReason), "default") {
+	if responseID == "" {
 		return ""
 	}
-	if !supportsPreviousResponseIDRoute(route) {
+	if isGrokLeaderRoute(route) {
+		return responseID
+	}
+	if !strings.EqualFold(strings.TrimSpace(branchReason), "default") || !supportsPreviousResponseIDRoute(route) {
 		return ""
 	}
 	return responseID
@@ -59,10 +69,14 @@ func supportsPreviousResponseIDRoute(route *channel.ResolvedRoute) bool {
 	if route == nil || !llm.SupportsPreviousResponseID(route.Protocol) {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(route.Protocol), llm.AdapterGrokLeader) {
+	if isGrokLeaderRoute(route) {
 		return true
 	}
 	return isOfficialOpenAIBaseURL(route.BaseURL)
+}
+
+func isGrokLeaderRoute(route *channel.ResolvedRoute) bool {
+	return route != nil && strings.EqualFold(strings.TrimSpace(route.Protocol), llm.AdapterGrokLeader)
 }
 
 func supportsOpenAIResponsesBackgroundMode(route *channel.ResolvedRoute) bool {
