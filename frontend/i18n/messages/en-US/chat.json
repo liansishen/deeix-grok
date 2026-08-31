@@ -15,6 +15,11 @@
   "time": "Time",
   "tokens": "Tokens",
   "details": "Details",
+  "grokSession": {
+    "running": "Grok task running",
+    "ready": "Grok session ready to continue",
+    "unbound": "Grok session not bound"
+  },
   "temporary": {
     "title": "Temporary chat",
     "historyChat": "Normal chat",

@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+	"sync"
 )
 
 const (
@@ -20,8 +20,19 @@ const (
 	grokLeaderMaxFrameSize  = 64 * 1024 * 1024
 )
 
-// grokLeaderAdapter forwards one Deeix text turn through the Grok Build leader ACP socket.
-type grokLeaderAdapter struct{}
+// grokLeaderSession owns one ACP connection and serializes prompts for one Deeix conversation.
+type grokLeaderSession struct {
+	mu        sync.Mutex
+	conn      net.Conn
+	sessionID string
+	nextID    int
+}
+
+// grokLeaderAdapter forwards Deeix turns through the Grok Build leader ACP socket.
+type grokLeaderAdapter struct {
+	mu       sync.Mutex
+	sessions map[string]*grokLeaderSession
+}
 
 func (a *grokLeaderAdapter) Name() string { return AdapterGrokLeader }
 
@@ -52,19 +63,22 @@ func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input Ge
 	}
 	defer cancel()
 
-	socketPath, err := grokLeaderSocketPath()
+	key := strings.TrimSpace(input.ConversationSessionKey)
+	if key == "" {
+		key = strings.TrimSpace(input.ConversationPublicID)
+	}
+	var session *grokLeaderSession
+	if key != "" {
+		session = a.sessionFor(key)
+		session.mu.Lock()
+		defer session.mu.Unlock()
+	}
+
+	conn, sessionID, requestID, err := a.acquireConnection(requestCtx, route, input, session)
 	if err != nil {
 		return nil, err
 	}
-	dialer := net.Dialer{Timeout: resolveConnectTimeout(route.ConnectTimeoutMS)}
-	conn, err := dialer.DialContext(requestCtx, "unix", socketPath)
-	if err != nil {
-		return nil, fmt.Errorf("connect to Grok leader %q: %w", socketPath, err)
-	}
-	defer conn.Close()
-
 	connectionDone := make(chan struct{})
-	defer close(connectionDone)
 	go func() {
 		select {
 		case <-requestCtx.Done():
@@ -72,66 +86,10 @@ func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input Ge
 		case <-connectionDone:
 		}
 	}()
+	defer close(connectionDone)
 
-	if err := writeGrokLeaderMessage(conn, map[string]interface{}{
-		"type":        "register",
-		"client_type": grokLeaderClientType,
-		"mode":        "stdio",
-		"capabilities": map[string]interface{}{
-			"auto_mode": true,
-			"terminal":  false,
-			"fs_read":   false,
-			"fs_write":  false,
-		},
-	}); err != nil {
-		return nil, fmt.Errorf("register with Grok leader: %w", err)
-	}
-	if err := waitForGrokLeaderReady(conn); err != nil {
-		return nil, err
-	}
-
-	if err := sendGrokACPRequest(conn, 1, "initialize", map[string]interface{}{
-		"protocolVersion": 1,
-		"clientInfo": map[string]interface{}{
-			"name":    grokLeaderClientType,
-			"version": "1",
-		},
-		"clientCapabilities": map[string]interface{}{},
-	}); err != nil {
-		return nil, err
-	}
-	if _, err := readGrokACPResponse(conn, 1); err != nil {
-		return nil, fmt.Errorf("initialize Grok ACP session: %w", err)
-	}
-
-	cwd, err := grokLeaderWorkingDirectory()
-	if err != nil {
-		return nil, err
-	}
-	newParams := map[string]interface{}{
-		"cwd":        cwd,
-		"mcpServers": []interface{}{},
-		"_meta":      map[string]interface{}{"sessionKind": "headless"},
-	}
-	if model := strings.TrimSpace(route.UpstreamModel); model != "" {
-		newParams["modelId"] = model
-	}
-	if err := sendGrokACPRequest(conn, 2, "session/new", newParams); err != nil {
-		return nil, err
-	}
-	newResponse, err := readGrokACPResponse(conn, 2)
-	if err != nil {
-		return nil, fmt.Errorf("create Grok ACP session: %w", err)
-	}
-	sessionID := grokStringAt(newResponse, "result", "sessionId")
-	if sessionID == "" {
-		sessionID = grokStringAt(newResponse, "result", "session_id")
-	}
-	if sessionID == "" {
-		return nil, errors.New("Grok ACP session/new response did not contain a session id")
-	}
-
-	if err := sendGrokACPRequest(conn, 3, "session/prompt", map[string]interface{}{
+	output := &GenerateOutput{ResponseID: sessionID}
+	if err := sendGrokACPRequest(conn, requestID, "session/prompt", map[string]interface{}{
 		"sessionId": sessionID,
 		"prompt": []map[string]string{{
 			"type": "text",
@@ -139,17 +97,192 @@ func (a *grokLeaderAdapter) run(ctx context.Context, route RouteConfig, input Ge
 		}},
 		"_meta": map[string]interface{}{"screenMode": "headless"},
 	}); err != nil {
+		a.dropConnection(session, conn)
+		return nil, err
+	}
+	if err := consumeGrokPrompt(conn, requestID, output, onEvent); err != nil {
+		a.dropConnection(session, conn)
+		if session != nil && input.PreviousResponseID != "" && output.Text == "" && isGrokMissingSessionError(err) {
+			return a.retryWithNewSession(requestCtx, route, input, onEvent, session)
+		}
 		return nil, err
 	}
 
-	output := &GenerateOutput{ResponseID: strings.TrimSpace(input.RequestID)}
-	if err := consumeGrokPrompt(conn, 3, output, onEvent); err != nil {
-		return nil, err
-	}
-	if output.ResponseID == "" {
-		output.ResponseID = fmt.Sprintf("grok-%d", time.Now().UnixNano())
+	if session != nil {
+		session.conn = conn
+		session.sessionID = sessionID
+		session.nextID = requestID + 1
 	}
 	return output, nil
+}
+
+func (a *grokLeaderAdapter) acquireConnection(ctx context.Context, route RouteConfig, input GenerateInput, session *grokLeaderSession) (net.Conn, string, int, error) {
+	if session != nil && session.conn != nil {
+		return session.conn, session.sessionID, session.nextID, nil
+	}
+	conn, err := openGrokLeaderConnection(ctx, route)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	persistedID := strings.TrimSpace(input.PreviousResponseID)
+	if persistedID == "" && session != nil {
+		persistedID = strings.TrimSpace(session.sessionID)
+	}
+	if persistedID != "" {
+		if session != nil {
+			session.sessionID = persistedID
+		}
+		return conn, persistedID, 3, nil
+	}
+	sessionID, err := createGrokSession(conn, route)
+	if err != nil {
+		_ = conn.Close()
+		return nil, "", 0, err
+	}
+	return conn, sessionID, 3, nil
+}
+
+func (a *grokLeaderAdapter) retryWithNewSession(ctx context.Context, route RouteConfig, input GenerateInput, onEvent func(GenerateStreamEvent) error, session *grokLeaderSession) (*GenerateOutput, error) {
+	conn, err := openGrokLeaderConnection(ctx, route)
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := createGrokSession(conn, route)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	output := &GenerateOutput{ResponseID: sessionID}
+	if err := sendGrokACPRequest(conn, 3, "session/prompt", map[string]interface{}{
+		"sessionId": sessionID,
+		"prompt":    []map[string]string{{"type": "text", "text": grokPromptText(input)}},
+		"_meta":     map[string]interface{}{"screenMode": "headless"},
+	}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if err := consumeGrokPrompt(conn, 3, output, onEvent); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	session.conn = conn
+	session.sessionID = sessionID
+	session.nextID = 4
+	return output, nil
+}
+
+func (a *grokLeaderAdapter) sessionFor(key string) *grokLeaderSession {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sessions == nil {
+		a.sessions = make(map[string]*grokLeaderSession)
+	}
+	if session := a.sessions[key]; session != nil {
+		return session
+	}
+	session := &grokLeaderSession{nextID: 3}
+	a.sessions[key] = session
+	return session
+}
+
+func (a *grokLeaderAdapter) dropConnection(session *grokLeaderSession, conn net.Conn) {
+	_ = conn.Close()
+	if session != nil && session.conn == conn {
+		session.conn = nil
+	}
+}
+
+func openGrokLeaderConnection(ctx context.Context, route RouteConfig) (net.Conn, error) {
+	socketPath, err := grokLeaderSocketPath()
+	if err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{Timeout: resolveConnectTimeout(route.ConnectTimeoutMS)}
+	conn, err := dialer.DialContext(ctx, "unix", socketPath)
+	if err != nil {
+		return nil, fmt.Errorf("connect to Grok leader %q: %w", socketPath, err)
+	}
+	connectionDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-connectionDone:
+		}
+	}()
+	defer close(connectionDone)
+
+	if err := writeGrokLeaderMessage(conn, map[string]interface{}{
+		"type": "register", "client_type": grokLeaderClientType, "mode": "stdio",
+		"capabilities": map[string]interface{}{"auto_mode": true, "terminal": false, "fs_read": false, "fs_write": false},
+	}); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("register with Grok leader: %w", err)
+	}
+	if err := waitForGrokLeaderReady(conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if err := sendGrokACPRequest(conn, 1, "initialize", map[string]interface{}{
+		"protocolVersion":    1,
+		"clientInfo":         map[string]interface{}{"name": grokLeaderClientType, "version": "1"},
+		"clientCapabilities": map[string]interface{}{},
+	}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if _, err := readGrokACPResponse(conn, 1); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("initialize Grok ACP session: %w", err)
+	}
+	return conn, nil
+}
+
+func createGrokSession(conn net.Conn, route RouteConfig) (string, error) {
+	cwd, err := grokLeaderWorkingDirectory()
+	if err != nil {
+		return "", err
+	}
+	params := map[string]interface{}{
+		"cwd": cwd, "mcpServers": []interface{}{}, "_meta": map[string]interface{}{"sessionKind": "headless"},
+	}
+	if model := strings.TrimSpace(route.UpstreamModel); model != "" {
+		params["modelId"] = model
+	}
+	if err := sendGrokACPRequest(conn, 2, "session/new", params); err != nil {
+		return "", err
+	}
+	response, err := readGrokACPResponse(conn, 2)
+	if err != nil {
+		return "", fmt.Errorf("create Grok ACP session: %w", err)
+	}
+	sessionID := grokStringAt(response, "result", "sessionId")
+	if sessionID == "" {
+		sessionID = grokStringAt(response, "result", "session_id")
+	}
+	if sessionID == "" {
+		return "", errors.New("Grok ACP session/new response did not contain a session id")
+	}
+	return sessionID, nil
+}
+
+func isGrokMissingSessionError(err error) bool {
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "session") && (strings.Contains(message, "not found") || strings.Contains(message, "unknown") || strings.Contains(message, "invalid"))
+}
+
+func (a *grokLeaderAdapter) Close() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, session := range a.sessions {
+		session.mu.Lock()
+		if session.conn != nil {
+			_ = session.conn.Close()
+			session.conn = nil
+		}
+		session.mu.Unlock()
+	}
+	a.sessions = nil
 }
 
 func grokLeaderSocketPath() (string, error) {

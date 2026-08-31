@@ -177,8 +177,13 @@ func DefaultEndpointForAdapter(adapter string) string {
 	}
 }
 
-// SupportsPreviousResponseID 返回协议是否明确支持 previous_response_id 有状态续接。
-// 兼容/逆向实现即使复用 Responses 形状，也不一定支持该字段；默认保持关闭。
+// SupportsPreviousResponseID 返回协议是否明确支持有状态续接。
+// Grok leader 使用同一字段承载 ACP session ID，而不是发送给 Responses API。
 func SupportsPreviousResponseID(adapter string) bool {
-	return NormalizeAdapter(adapter) == AdapterOpenAIResponses
+	switch NormalizeAdapter(adapter) {
+	case AdapterOpenAIResponses, AdapterGrokLeader:
+		return true
+	default:
+		return false
+	}
 }

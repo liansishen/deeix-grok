@@ -1,6 +1,6 @@
 "use client";
 
-import { Glasses } from "lucide-react";
+import { Glasses, Radio } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import * as React from "react";
@@ -67,6 +67,28 @@ import { resolveChatContentWidthClassName } from "@/shared/model/chat-content-wi
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
 const EMPTY_LIST: never[] = [];
 const TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX = 48;
+
+function GrokSessionStatus({ conversation, busy }: { conversation: ConversationDTO | null; busy: boolean }) {
+  const t = useTranslations("chat.grokSession");
+  const provider = `${conversation?.provider ?? ""} ${conversation?.model ?? ""}`.toLowerCase();
+  if (!conversation || !provider.includes("grok")) {
+    return null;
+  }
+
+  const sessionID = conversation.lastResponseID?.trim() ?? "";
+  const statusLabel = busy ? t("running") : sessionID ? t("ready") : t("unbound");
+  return (
+    <div className="mx-auto flex w-full max-w-[1080px] items-center gap-2 px-3 pb-2 text-[11px] text-muted-foreground md:px-6">
+      <Radio className={cn("size-3.5", busy && "animate-pulse text-foreground")} aria-hidden="true" />
+      <span>{statusLabel}</span>
+      {sessionID ? (
+        <code className="max-w-[13rem] truncate rounded bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]" title={sessionID}>
+          {sessionID}
+        </code>
+      ) : null}
+    </div>
+  );
+}
 
 export function AppChatArea() {
   const t = useTranslations("chat");
@@ -776,6 +798,8 @@ export function AppChatArea() {
               ) : isConversationLoadFailed ? (
                 <ChatAreaLoadError onRefresh={reload} onNewConversation={onNewConversationFromLoadError} />
               ) : (
+                <>
+                  <GrokSessionStatus conversation={currentConversation} busy={composerSending} />
                 <ChatArea
                   title={temporaryMode ? t("temporary.title") : activeConversationTitle}
                   starred={activeConversationStarred}
@@ -841,6 +865,7 @@ export function AppChatArea() {
                     onExit: screenshot.exitSelectionMode,
                   }}
                 />
+                </>
               )}
             </div>
 

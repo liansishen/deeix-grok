@@ -15,6 +15,11 @@
   "time": "时间",
   "tokens": "Token",
   "details": "详情",
+  "grokSession": {
+    "running": "Grok 任务运行中",
+    "ready": "Grok 会话可继续",
+    "unbound": "Grok 会话尚未绑定"
+  },
   "temporary": {
     "title": "临时对话",
     "historyChat": "正常对话",

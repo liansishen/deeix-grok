@@ -56,9 +56,13 @@ func resolvePreviousResponseID(route *channel.ResolvedRoute, branchReason string
 }
 
 func supportsPreviousResponseIDRoute(route *channel.ResolvedRoute) bool {
-	return route != nil &&
-		llm.SupportsPreviousResponseID(route.Protocol) &&
-		isOfficialOpenAIBaseURL(route.BaseURL)
+	if route == nil || !llm.SupportsPreviousResponseID(route.Protocol) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(route.Protocol), llm.AdapterGrokLeader) {
+		return true
+	}
+	return isOfficialOpenAIBaseURL(route.BaseURL)
 }
 
 func supportsOpenAIResponsesBackgroundMode(route *channel.ResolvedRoute) bool {
