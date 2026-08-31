@@ -153,6 +153,15 @@ func (a *grokLeaderAdapter) retryWithNewSession(ctx context.Context, route Route
 		return nil, err
 	}
 	output := &GenerateOutput{ResponseID: sessionID}
+	connectionDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-connectionDone:
+		}
+	}()
+	defer close(connectionDone)
 	if err := sendGrokACPRequest(conn, 3, "session/prompt", map[string]interface{}{
 		"sessionId": sessionID,
 		"prompt":    []map[string]string{{"type": "text", "text": grokPromptText(input)}},
