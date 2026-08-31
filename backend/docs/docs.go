@@ -18563,6 +18563,7 @@ const docTemplate = `{
                         "anthropic",
                         "google",
                         "xai",
+                        "grok",
                         "openrouter",
                         "custom"
                     ]
@@ -26151,6 +26152,7 @@ const docTemplate = `{
                         "anthropic",
                         "google",
                         "xai",
+                        "grok",
                         "openrouter",
                         "custom"
                     ]

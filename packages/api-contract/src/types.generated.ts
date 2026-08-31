@@ -1240,6 +1240,7 @@ export interface CreateUpstreamRequest {
     | "anthropic"
     | "google"
     | "xai"
+    | "grok"
     | "openrouter"
     | "custom";
   connectTimeoutMS?: number;
@@ -3685,6 +3686,7 @@ export interface UpdateUpstreamRequest {
     | "anthropic"
     | "google"
     | "xai"
+    | "grok"
     | "openrouter"
     | "custom";
   connectTimeoutMS?: number;

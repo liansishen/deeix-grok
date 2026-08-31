@@ -18556,6 +18556,7 @@
                         "anthropic",
                         "google",
                         "xai",
+                        "grok",
                         "openrouter",
                         "custom"
                     ]
@@ -26144,6 +26145,7 @@
                         "anthropic",
                         "google",
                         "xai",
+                        "grok",
                         "openrouter",
                         "custom"
                     ]
