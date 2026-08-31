@@ -158,14 +158,14 @@ func watchGrokLeaderContext(ctx context.Context, conn net.Conn) func() {
 }
 
 func requestGrokLeaderSessions(conn net.Conn, requestID int) ([]GrokLeaderSession, error) {
-	if err := sendGrokACPRequest(conn, requestID, "x.ai/sessions/list", map[string]interface{}{}); err != nil {
+	if err := sendGrokACPRequest(conn, requestID, "_x.ai/sessions/list", map[string]interface{}{}); err != nil {
 		return nil, err
 	}
 	response, err := readGrokACPResponse(conn, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("list Grok leader sessions: %w", err)
 	}
-	result, ok := grokMapAt(response, "result")
+	result, ok := grokMapAt(response, "result", "result")
 	if !ok {
 		return nil, errors.New("Grok leader sessions response did not contain a result")
 	}
