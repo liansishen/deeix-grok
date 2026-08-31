@@ -69,6 +69,20 @@ func TestSearchConversationsRejectsLongQueryWithStableCode(t *testing.T) {
 	}
 }
 
+func TestRegisterRoutesIncludesGrokLeaderObservationStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	module := NewModule(&Handler{})
+	module.RegisterRoutes(engine.Group("/api/v1"))
+
+	for _, route := range engine.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/conversations/:id/grok-session/stream" {
+			return
+		}
+	}
+	t.Fatal("Grok leader observation stream route was not registered")
+}
+
 func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 	err := errors.Join(appconversation.ErrUpstreamRequestFailed, &llm.UpstreamError{
 		StatusCode: 401,

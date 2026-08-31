@@ -75,6 +75,8 @@ export type GrokLeaderSessionBindingDTO = {
   session: GrokLeaderSessionDTO;
 };
 
+export type GrokLeaderConversationEvent = { type: "changed" };
+
 export type ConversationSearchResultDTO = ConversationSearchResultResponse;
 
 export type ActiveConversationRunSnapshot = {

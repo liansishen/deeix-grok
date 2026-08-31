@@ -56,7 +56,7 @@ import { filterAvailableMCPToolIDs } from "@/features/chat/model/chat-mcp-tool-d
 import type { ChatAreaMessage, } from "@/features/chat/types/messages";
 import { useSettingsChatPreferences } from "@/features/settings";
 import { cn } from "@/lib/utils";
-import { bindGrokLeaderSession, getConversation } from "@/shared/api/conversation";
+import { bindGrokLeaderSession, getConversation, streamGrokLeaderConversation } from "@/shared/api/conversation";
 import type {
   ConversationDTO,
   ConversationOptions,
@@ -74,6 +74,7 @@ import { resolveChatContentWidthClassName } from "@/shared/model/chat-content-wi
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
 const EMPTY_LIST: never[] = [];
 const TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX = 48;
+const GROK_OBSERVER_RECONNECT_MS = 1_000;
 
 function GrokSessionStatus({
   conversation,
@@ -361,6 +362,48 @@ export function AppChatArea() {
     },
     [reload, upsertConversation],
   );
+  React.useEffect(() => {
+    const conversationPublicID = currentConversation?.publicID.trim() ?? "";
+    const sessionID = currentConversation?.lastResponseID?.trim() ?? "";
+    if (!grokLeaderSelected || !conversationPublicID || !sessionID) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let reconnectTimer: number | null = null;
+    const observe = async () => {
+      try {
+        const token = await resolveAccessToken();
+        if (!token || controller.signal.aborted) {
+          return;
+        }
+        await streamGrokLeaderConversation(token, conversationPublicID, {
+          signal: controller.signal,
+          onEvent: () => reload(),
+        });
+      } catch {
+        // The observer reconnects below and the next replay reconciles missed updates.
+      }
+      if (!controller.signal.aborted) {
+        reconnectTimer = window.setTimeout(() => {
+          void observe();
+        }, GROK_OBSERVER_RECONNECT_MS);
+      }
+    };
+
+    void observe();
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+    };
+  }, [
+    currentConversation?.lastResponseID,
+    currentConversation?.publicID,
+    grokLeaderSelected,
+    reload,
+  ]);
   React.useEffect(() => {
     const conversationPublicID = currentConversation?.publicID.trim() ?? "";
     const sessionID = currentConversation?.lastResponseID?.trim() ?? "";

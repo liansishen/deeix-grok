@@ -23,6 +23,7 @@ func (m *Module) RegisterRoutes(authRequired *gin.RouterGroup) {
 	authRequired.POST("/conversations/:id/title/regenerate", m.Handler.RegenerateConversationTitle)
 	authRequired.PATCH("/conversations/:id/labels", m.Handler.UpdateConversationLabels)
 	authRequired.POST("/conversations/:id/grok-session", m.Handler.BindGrokLeaderSession)
+	authRequired.GET("/conversations/:id/grok-session/stream", m.Handler.ObserveGrokLeaderConversation)
 	authRequired.PATCH("/conversations/:id/star", m.Handler.SetConversationStar)
 	authRequired.PATCH("/conversations/:id/archive", m.Handler.SetConversationArchive)
 	authRequired.PATCH("/conversations/:id/project", m.Handler.SetConversationProject)

@@ -631,6 +631,21 @@ func (c *Client) BindGrokLeaderSession(ctx context.Context, route RouteConfig, c
 	return adapter.bindSession(ctx, route, conversationSessionKey, sessionID)
 }
 
+// ObserveGrokLeaderSession 在独立连接上加载历史并持续接收会话更新。
+func (c *Client) ObserveGrokLeaderSession(
+	ctx context.Context,
+	route RouteConfig,
+	sessionID string,
+	onHistory func([]GrokLeaderHistoryMessage) error,
+	onEvent func(GrokLeaderEvent) error,
+) error {
+	adapter, err := c.grokLeaderAdapter(route)
+	if err != nil {
+		return err
+	}
+	return adapter.observeSession(ctx, route, sessionID, onHistory, onEvent)
+}
+
 func (c *Client) grokLeaderAdapter(route RouteConfig) (*grokLeaderAdapter, error) {
 	adapter, err := c.adapterFor(route)
 	if err != nil {

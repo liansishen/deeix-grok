@@ -276,12 +276,26 @@ type ModelItem struct {
 	OwnedBy string
 }
 
+// GrokLeaderEvent 是 session/update 中可持久化的消息、思考或工具事件。
+type GrokLeaderEvent struct {
+	Kind            string
+	EventID         string
+	PromptID        string
+	ChunkID         string
+	Text            string
+	CreatedAtUnixMS int64
+	ToolCall        *ToolCall
+}
+
 // GrokLeaderHistoryMessage 是 session/load replay 中可展示的对话消息。
 type GrokLeaderHistoryMessage struct {
 	Role             string
+	StableID         string
+	RunID            string
 	Content          string
 	ReasoningContent string
 	CreatedAtUnixMS  int64
+	Events           []GrokLeaderEvent
 }
 
 // GrokLeaderSession 是共享 Grok leader roster 中的会话摘要。

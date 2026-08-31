@@ -17,6 +17,7 @@ import type {
   ConversationDTO,
   ConversationExportDTO,
   GrokLeaderSessionBindingDTO,
+  GrokLeaderConversationEvent,
   GrokLeaderSessionDTO,
   ConversationPreviewMessageDTO,
   ConversationProjectDTO,
@@ -602,6 +603,70 @@ export async function bindGrokLeaderSession(
     { method: "POST", accessToken, body: payload },
     true,
   );
+}
+
+export async function streamGrokLeaderConversation(
+  accessToken: string,
+  conversationPublicID: string,
+  options: {
+    signal?: AbortSignal;
+    onEvent: (event: GrokLeaderConversationEvent) => void;
+  },
+): Promise<void> {
+  const response = await authedFetch(
+    `/api/v1/conversations/${pathParam(conversationPublicID)}/grok-session/stream`,
+    {
+      accessToken,
+      headers: { Accept: "text/event-stream" },
+      signal: options.signal,
+    },
+    true,
+  );
+  if (!response.body) {
+    throw new ApiError("Grok leader conversation stream is unavailable", response.status);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const consumeFrames = (flush: boolean) => {
+    buffer += flush ? decoder.decode() : "";
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = flush ? "" : (frames.pop() ?? "");
+    for (const frame of frames) {
+      const data = frame
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n")
+        .trim();
+      if (!data) {
+        continue;
+      }
+      try {
+        const event = JSON.parse(data) as GrokLeaderConversationEvent;
+        if (event.type === "changed") {
+          options.onEvent(event);
+        }
+      } catch {
+        // Ignore malformed events without ending the observation stream.
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        consumeFrames(true);
+        return;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      consumeFrames(false);
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 export async function exportConversation(

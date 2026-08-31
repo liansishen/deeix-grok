@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -120,7 +121,7 @@ func (a *grokLeaderAdapter) bindSession(ctx context.Context, route RouteConfig, 
 		_ = conn.Close()
 		return nil, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, targetID)
 	}
-	history, err := loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD)
+	history, _, err := loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -133,6 +134,87 @@ func (a *grokLeaderAdapter) bindSession(ctx context.Context, route RouteConfig, 
 	session.sessionID = entry.SessionID
 	session.nextID = 4
 	return &entry, nil
+}
+
+func (a *grokLeaderAdapter) observeSession(
+	ctx context.Context,
+	route RouteConfig,
+	sessionID string,
+	onHistory func([]GrokLeaderHistoryMessage) error,
+	onEvent func(GrokLeaderEvent) error,
+) error {
+	targetID := strings.TrimSpace(sessionID)
+	if targetID == "" {
+		return ErrGrokLeaderSessionNotFound
+	}
+	conn, err := openGrokLeaderConnection(ctx, route)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	stopWatching := watchGrokLeaderContext(ctx, conn)
+	defer stopWatching()
+
+	if err = conn.SetDeadline(time.Now().Add(resolveReadTimeout(route.ReadTimeoutMS))); err != nil {
+		return fmt.Errorf("set Grok leader observer load deadline: %w", err)
+	}
+	sessions, err := requestGrokLeaderSessions(conn, 2)
+	if err != nil {
+		return err
+	}
+	entry, ok := findGrokLeaderSession(sessions, targetID)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, targetID)
+	}
+	history, pendingEvents, err := loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD)
+	if err != nil {
+		return err
+	}
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("clear Grok leader observer load deadline: %w", err)
+	}
+	if onHistory != nil {
+		if err = onHistory(history); err != nil {
+			return err
+		}
+	}
+	for _, event := range pendingEvents {
+		if onEvent != nil {
+			if err = onEvent(event); err != nil {
+				return err
+			}
+		}
+	}
+	return consumeGrokLeaderObserver(ctx, conn, onEvent)
+}
+
+func consumeGrokLeaderObserver(ctx context.Context, conn net.Conn, onEvent func(GrokLeaderEvent) error) error {
+	for {
+		message, err := readGrokLeaderMessage(conn)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("read Grok leader observer: %w", err)
+		}
+		if grokString(message, "type") == "error" {
+			return errors.New(grokMessageError(message))
+		}
+		if grokString(message, "type") != "acp" {
+			continue
+		}
+		payload := make(map[string]interface{})
+		if err = json.Unmarshal([]byte(grokString(message, "payload")), &payload); err != nil {
+			return fmt.Errorf("decode Grok ACP observer message: %w", err)
+		}
+		event, isReplay, _, ok := decodeGrokLeaderUpdate(payload)
+		if !ok || isReplay || onEvent == nil {
+			continue
+		}
+		if err = onEvent(event); err != nil {
+			return err
+		}
+	}
 }
 
 func grokLeaderRequestContext(ctx context.Context, route RouteConfig) (context.Context, context.CancelFunc) {
@@ -206,94 +288,158 @@ func findGrokLeaderSession(sessions []GrokLeaderSession, sessionID string) (Grok
 	return GrokLeaderSession{}, false
 }
 
-func loadGrokLeaderSession(conn net.Conn, requestID int, sessionID string, cwd string) ([]GrokLeaderHistoryMessage, error) {
+func loadGrokLeaderSession(conn net.Conn, requestID int, sessionID string, cwd string) ([]GrokLeaderHistoryMessage, []GrokLeaderEvent, error) {
 	if err := sendGrokACPRequest(conn, requestID, "session/load", map[string]interface{}{
 		"sessionId": sessionID, "cwd": cwd, "mcpServers": []interface{}{},
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	history := make([]GrokLeaderHistoryMessage, 0)
+	liveEvents := make([]GrokLeaderEvent, 0)
 	skipTurn := false
 	for {
 		message, err := readGrokLeaderMessage(conn)
 		if err != nil {
-			return nil, fmt.Errorf("load Grok leader session %q: %w", sessionID, err)
+			return nil, nil, fmt.Errorf("load Grok leader session %q: %w", sessionID, err)
 		}
 		if grokString(message, "type") == "error" {
-			return nil, errors.New(grokMessageError(message))
+			return nil, nil, errors.New(grokMessageError(message))
 		}
 		if grokString(message, "type") != "acp" {
 			continue
 		}
 		payload := make(map[string]interface{})
 		if err = json.Unmarshal([]byte(grokString(message, "payload")), &payload); err != nil {
-			return nil, fmt.Errorf("decode Grok ACP session/load message: %w", err)
+			return nil, nil, fmt.Errorf("decode Grok ACP session/load message: %w", err)
 		}
 		if payload["id"] != nil && grokJSONID(payload["id"]) == requestID {
 			if payload["error"] != nil {
-				return nil, fmt.Errorf("load Grok leader session %q: Grok ACP %s", sessionID, grokACPError(payload["error"]))
+				return nil, nil, fmt.Errorf("load Grok leader session %q: Grok ACP %s", sessionID, grokACPError(payload["error"]))
 			}
-			return history, nil
+			return history, liveEvents, nil
 		}
-		if grokString(payload, "method") != "session/update" {
-			continue
-		}
-		params, ok := grokMapAt(payload, "params")
+		event, isReplay, hidden, ok := decodeGrokLeaderUpdate(payload)
 		if !ok {
 			continue
 		}
-		meta, ok := grokMapAt(params, "_meta")
-		if !ok {
-			continue
-		}
-		isReplay, _ := meta["isReplay"].(bool)
 		if !isReplay {
+			liveEvents = append(liveEvents, event)
 			continue
 		}
-		update, ok := grokMapAt(params, "update")
-		if !ok {
-			continue
-		}
-		if grokFirstString(update, "sessionUpdate", "session_update") == "user_message_chunk" {
-			updateMeta, _ := grokMapAt(update, "_meta")
-			skipTurn, _ = updateMeta["hideFromScrollback"].(bool)
+		if event.Kind == "user_message_chunk" {
+			skipTurn = hidden
 		}
 		if skipTurn {
 			continue
 		}
-		history = appendGrokLeaderHistoryUpdate(history, update, grokInt64(meta, "agentTimestampMs"))
+		history = appendGrokLeaderHistoryEvent(history, event)
 	}
 }
 
-func appendGrokLeaderHistoryUpdate(history []GrokLeaderHistoryMessage, update map[string]interface{}, createdAtUnixMS int64) []GrokLeaderHistoryMessage {
+func decodeGrokLeaderUpdate(payload map[string]interface{}) (GrokLeaderEvent, bool, bool, bool) {
+	if grokString(payload, "method") != "session/update" {
+		return GrokLeaderEvent{}, false, false, false
+	}
+	params, ok := grokMapAt(payload, "params")
+	if !ok {
+		return GrokLeaderEvent{}, false, false, false
+	}
+	update, ok := grokMapAt(params, "update")
+	if !ok {
+		return GrokLeaderEvent{}, false, false, false
+	}
 	kind := grokFirstString(update, "sessionUpdate", "session_update")
-	text := grokReplayTextAt(update, "content")
-	if text == "" {
-		return history
+	switch kind {
+	case "user_message_chunk", "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan":
+	default:
+		return GrokLeaderEvent{}, false, false, false
+	}
+	meta, _ := grokMapAt(params, "_meta")
+	updateMeta, _ := grokMapAt(update, "_meta")
+	isReplay, _ := meta["isReplay"].(bool)
+	hidden, _ := updateMeta["hideFromScrollback"].(bool)
+	event := GrokLeaderEvent{
+		Kind:            kind,
+		EventID:         firstGrokString(meta, updateMeta, "eventId", "event_id"),
+		PromptID:        firstGrokString(meta, updateMeta, "promptId", "prompt_id"),
+		ChunkID:         firstGrokString(meta, updateMeta, "chunkId", "chunk_id", "messageId", "message_id"),
+		CreatedAtUnixMS: grokInt64(meta, "agentTimestampMs", "agent_timestamp_ms"),
 	}
 	switch kind {
+	case "user_message_chunk", "agent_message_chunk", "agent_thought_chunk":
+		event.Text = grokReplayTextAt(update, "content")
+	case "tool_call", "tool_call_update":
+		call := grokToolCall(update)
+		event.ToolCall = &call
+	case "plan":
+		event.Text = grokJSONField(update, "entries", "content")
+	}
+	return event, isReplay, hidden, true
+}
+
+func firstGrokString(primary map[string]interface{}, secondary map[string]interface{}, keys ...string) string {
+	if value := grokFirstString(primary, keys...); value != "" {
+		return value
+	}
+	return grokFirstString(secondary, keys...)
+}
+
+func appendGrokLeaderHistoryEvent(history []GrokLeaderHistoryMessage, event GrokLeaderEvent) []GrokLeaderHistoryMessage {
+	switch event.Kind {
 	case "user_message_chunk":
-		if len(history) > 0 && history[len(history)-1].Role == "user" {
-			history[len(history)-1].Content = appendGrokLeaderHistoryText(history[len(history)-1].Content, text)
+		if strings.TrimSpace(event.Text) == "" {
 			return history
 		}
-		return append(history, GrokLeaderHistoryMessage{Role: "user", Content: text, CreatedAtUnixMS: createdAtUnixMS})
-	case "agent_message_chunk", "agent_thought_chunk":
-		if len(history) == 0 || history[len(history)-1].Role != "assistant" {
-			history = append(history, GrokLeaderHistoryMessage{Role: "assistant", CreatedAtUnixMS: createdAtUnixMS})
+		if len(history) == 0 || history[len(history)-1].Role != "user" {
+			history = append(history, GrokLeaderHistoryMessage{Role: "user"})
 		}
 		current := &history[len(history)-1]
-		if kind == "agent_thought_chunk" {
-			current.ReasoningContent = appendGrokLeaderHistoryText(current.ReasoningContent, text)
-		} else {
-			current.Content = appendGrokLeaderHistoryText(current.Content, text)
+		appendGrokLeaderHistoryEventMetadata(current, event)
+		current.Content = appendGrokLeaderReplayText(current.Content, event.Text)
+	case "agent_message_chunk", "agent_thought_chunk", "tool_call", "tool_call_update", "plan":
+		if len(history) == 0 || history[len(history)-1].Role != "assistant" {
+			history = append(history, GrokLeaderHistoryMessage{Role: "assistant"})
+		}
+		current := &history[len(history)-1]
+		appendGrokLeaderHistoryEventMetadata(current, event)
+		if event.Kind == "agent_message_chunk" {
+			current.Content = appendGrokLeaderReplayText(current.Content, event.Text)
+		} else if event.Kind == "agent_thought_chunk" {
+			current.ReasoningContent = appendGrokLeaderReplayText(current.ReasoningContent, event.Text)
 		}
 	}
 	return history
 }
 
-func appendGrokLeaderHistoryText(current string, next string) string {
-	return current + next
+func appendGrokLeaderHistoryEventMetadata(message *GrokLeaderHistoryMessage, event GrokLeaderEvent) {
+	message.Events = append(message.Events, event)
+	if message.CreatedAtUnixMS == 0 && event.CreatedAtUnixMS > 0 {
+		message.CreatedAtUnixMS = event.CreatedAtUnixMS
+	}
+	if message.Role == "user" {
+		if message.StableID == "" {
+			message.StableID = event.EventID
+		}
+		return
+	}
+	if event.PromptID != "" {
+		message.RunID = event.PromptID
+		message.StableID = event.PromptID
+	} else if message.StableID == "" && event.EventID != "" {
+		message.StableID = event.EventID
+		message.RunID = event.EventID
+	}
+}
+
+func appendGrokLeaderReplayText(current string, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return current
+	}
+	if current == "" {
+		return next
+	}
+	return current + "\n\n" + next
 }
 
 func grokReplayTextAt(value map[string]interface{}, key string) string {
@@ -382,7 +528,7 @@ func (a *grokLeaderAdapter) acquireConnection(ctx context.Context, route RouteCo
 			_ = conn.Close()
 			return nil, "", 0, fmt.Errorf("%w: %s", ErrGrokLeaderSessionNotFound, persistedID)
 		}
-		if _, err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
+		if _, _, err = loadGrokLeaderSession(conn, 3, entry.SessionID, entry.CWD); err != nil {
 			_ = conn.Close()
 			return nil, "", 0, err
 		}
@@ -763,14 +909,27 @@ func grokToolCall(update map[string]interface{}) ToolCall {
 	if len(call) == 0 {
 		call, _ = grokMapAt(update, "tool_call")
 	}
-	return ToolCall{
+	if len(call) == 0 {
+		call = update
+	}
+	meta, _ := grokMapAt(call, "_meta")
+	toolMeta, _ := meta["x.ai/tool"].(map[string]interface{})
+	name := grokFirstString(call, "title", "name", "kind")
+	if name == "" {
+		name = grokFirstString(toolMeta, "label", "name", "kind")
+	}
+	result := ToolCall{
 		ToolCallID:    grokFirstString(call, "toolCallId", "tool_call_id", "id"),
 		ToolType:      "function",
-		ToolName:      grokFirstString(call, "title", "name", "kind"),
+		ToolName:      name,
 		ArgumentsJSON: grokJSONField(call, "rawInput", "raw_input", "arguments", "input"),
 		Status:        grokFirstString(call, "status"),
-		OutputJSON:    grokJSONField(call, "rawOutput", "raw_output", "output"),
+		OutputJSON:    grokJSONField(call, "rawOutput", "raw_output", "output", "content"),
 	}
+	if result.Status == "failed" {
+		result.ErrorJSON = result.OutputJSON
+	}
+	return result
 }
 
 func grokUsage(payload map[string]interface{}, path ...string) Usage {
@@ -813,14 +972,15 @@ func grokFirstString(value map[string]interface{}, keys ...string) string {
 }
 
 func grokTextAt(value map[string]interface{}, key string) string {
-	if text := grokString(value, key); text != "" {
+	if text, ok := value[key].(string); ok {
 		return text
 	}
 	content, ok := value[key].(map[string]interface{})
 	if !ok {
 		return ""
 	}
-	return grokString(content, "text")
+	text, _ := content["text"].(string)
+	return text
 }
 
 func grokJSONField(value map[string]interface{}, keys ...string) string {

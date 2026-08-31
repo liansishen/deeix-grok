@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -94,6 +95,66 @@ func (h *Handler) BindGrokLeaderSession(c *gin.Context) {
 		Conversation: toConversationResponse(result.Conversation),
 		Session:      toGrokLeaderSessionResponse(result.Session),
 	})
+}
+
+// ObserveGrokLeaderConversation godoc
+// @Summary 观察已绑定的 Grok leader 会话
+// @Description 对账完整历史，并在会话发生更新时发送变更事件
+// @Tags chat
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Param id path string true "会话 public_id"
+// @Success 200 {string} string "SSE stream"
+// @Failure 404 {object} ErrorDoc
+// @Failure 409 {object} ErrorDoc
+// @Failure 502 {object} ErrorDoc
+// @Failure 503 {object} ErrorDoc
+// @Router /conversations/{id}/grok-session/stream [get]
+func (h *Handler) ObserveGrokLeaderConversation(c *gin.Context) {
+	publicID, err := stringParam(c, "id")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid conversation id")
+		return
+	}
+
+	observerCtx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	go func() {
+		select {
+		case <-h.shutdown.Done():
+			cancel()
+		case <-observerCtx.Done():
+		}
+	}()
+
+	started := false
+	writeChanged := func() error {
+		if !started {
+			c.Header("Content-Type", "text/event-stream; charset=utf-8")
+			c.Header("Cache-Control", "no-cache, no-transform")
+			c.Header("Connection", "keep-alive")
+			c.Header("X-Accel-Buffering", "no")
+			c.Status(http.StatusOK)
+			started = true
+		}
+		if _, writeErr := c.Writer.Write([]byte("data: {\"type\":\"changed\"}\n\n")); writeErr != nil {
+			return writeErr
+		}
+		c.Writer.Flush()
+		return nil
+	}
+
+	err = h.service.ObserveGrokLeaderConversation(
+		observerCtx,
+		middleware.MustUserID(c),
+		publicID,
+		middleware.MustRequestID(c),
+		writeChanged,
+	)
+	if started || errors.Is(err, context.Canceled) {
+		return
+	}
+	handleGrokLeaderSessionError(c, err)
 }
 
 func handleGrokLeaderSessionError(c *gin.Context, err error) {

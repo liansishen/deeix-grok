@@ -74,6 +74,7 @@ type (
 	GenerateStreamEvent      = portllm.GenerateStreamEvent
 	ModelItem                = portllm.ModelItem
 	GrokLeaderSession        = portllm.GrokLeaderSession
+	GrokLeaderEvent          = portllm.GrokLeaderEvent
 	GrokLeaderHistoryMessage = portllm.GrokLeaderHistoryMessage
 	UpstreamError            = portllm.UpstreamError
 	AcceptedRequestError     = portllm.AcceptedRequestError
