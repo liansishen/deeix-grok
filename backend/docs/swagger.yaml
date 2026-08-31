@@ -16543,6 +16543,43 @@ paths:
       summary: 绑定已有 Grok leader 会话
       tags:
       - chat
+  /conversations/{id}/grok-session/stream:
+    get:
+      description: 对账完整历史，并在会话发生更新时发送变更事件
+      parameters:
+      - description: 会话 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: SSE stream
+          schema:
+            type: string
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ConversationErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/ConversationErrorDoc'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/ConversationErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/ConversationErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 观察已绑定的 Grok leader 会话
+      tags:
+      - chat
   /conversations/{id}/labels:
     patch:
       consumes:

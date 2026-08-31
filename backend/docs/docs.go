@@ -10854,6 +10854,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/conversations/{id}/grok-session/stream": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "对账完整历史，并在会话发生更新时发送变更事件",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "观察已绑定的 Grok leader 会话",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 public_id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/conversations/{id}/labels": {
             "patch": {
                 "security": [

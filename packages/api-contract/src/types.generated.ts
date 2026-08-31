@@ -8440,6 +8440,25 @@ export namespace Conversations {
   }
 
   /**
+   * @description 对账完整历史，并在会话发生更新时发送变更事件
+   * @tags chat
+   * @name GrokSessionStreamList
+   * @summary 观察已绑定的 Grok leader 会话
+   * @request GET:/conversations/{id}/grok-session/stream
+   * @secure
+   */
+  export namespace GrokSessionStreamList {
+    export type RequestParams = {
+      /** 会话 public_id */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = string;
+  }
+
+  /**
    * @description 替换指定会话的标签；传入空数组可清空标签
    * @tags chat
    * @name LabelsPartialUpdate
