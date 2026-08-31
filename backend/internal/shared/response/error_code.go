@@ -203,7 +203,7 @@ var exactErrorSpecs = map[string]errorSpec{
 	"permission group is referenced by billing plan": {Code: "admin.permission_group_referenced_by_plan", Message: "permission group is referenced by a billing plan"},
 
 	"model route not configured":                  {Code: "llm.model_route_not_configured", Message: "model route is not configured"},
-	"selected model does not use Grok leader":      {Code: "llm.grok_leader_required", Message: "selected model does not use Grok leader"},
+	"selected model does not use grok leader":      {Code: "llm.grok_leader_required", Message: "selected model does not use Grok leader"},
 	"model access denied by group policy":         {Code: "llm.model_access_denied", Message: "you do not have access to this model"},
 	"model returned empty response":               {Code: "llm.empty_response", Message: "model returned empty response"},
 	"upstream returned empty response":            {Code: "llm.empty_response", Message: "model returned empty response"},
