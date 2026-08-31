@@ -57,28 +57,29 @@ var (
 
 // 请求/响应数据模型。
 type (
-	RouteConfig           = portllm.RouteConfig
-	ContentPart           = portllm.ContentPart
-	CacheControl          = portllm.CacheControl
-	Message               = portllm.Message
-	GenerateInput         = portllm.GenerateInput
-	ToolDefinition        = portllm.ToolDefinition
-	Usage                 = portllm.Usage
-	ToolCall              = portllm.ToolCall
-	ToolResult            = portllm.ToolResult
-	ReasoningOutput       = portllm.ReasoningOutput
-	GenerateOutput        = portllm.GenerateOutput
-	GeneratedImage        = portllm.GeneratedImage
-	GeneratedVideo        = portllm.GeneratedVideo
-	ReasoningDelta        = portllm.ReasoningDelta
-	GenerateStreamEvent   = portllm.GenerateStreamEvent
-	ModelItem             = portllm.ModelItem
-	GrokLeaderSession      = portllm.GrokLeaderSession
-	UpstreamError         = portllm.UpstreamError
-	AcceptedRequestError  = portllm.AcceptedRequestError
-	UpstreamDebugSnapshot = portllm.UpstreamDebugSnapshot
-	UpstreamDebugRequest  = portllm.UpstreamDebugRequest
-	UpstreamDebugResponse = portllm.UpstreamDebugResponse
+	RouteConfig              = portllm.RouteConfig
+	ContentPart              = portllm.ContentPart
+	CacheControl             = portllm.CacheControl
+	Message                  = portllm.Message
+	GenerateInput            = portllm.GenerateInput
+	ToolDefinition           = portllm.ToolDefinition
+	Usage                    = portllm.Usage
+	ToolCall                 = portllm.ToolCall
+	ToolResult               = portllm.ToolResult
+	ReasoningOutput          = portllm.ReasoningOutput
+	GenerateOutput           = portllm.GenerateOutput
+	GeneratedImage           = portllm.GeneratedImage
+	GeneratedVideo           = portllm.GeneratedVideo
+	ReasoningDelta           = portllm.ReasoningDelta
+	GenerateStreamEvent      = portllm.GenerateStreamEvent
+	ModelItem                = portllm.ModelItem
+	GrokLeaderSession        = portllm.GrokLeaderSession
+	GrokLeaderHistoryMessage = portllm.GrokLeaderHistoryMessage
+	UpstreamError            = portllm.UpstreamError
+	AcceptedRequestError     = portllm.AcceptedRequestError
+	UpstreamDebugSnapshot    = portllm.UpstreamDebugSnapshot
+	UpstreamDebugRequest     = portllm.UpstreamDebugRequest
+	UpstreamDebugResponse    = portllm.UpstreamDebugResponse
 )
 
 // NormalizeAdapter 规范化协议名。
