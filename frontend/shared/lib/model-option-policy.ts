@@ -11,6 +11,7 @@ export const MODEL_OPTION_POLICY_PROTOCOLS = [
   "google_image_generation",
   "gemini_interactions",
   "xai_responses",
+  "grok_leader",
   "xai_image",
   "xai_image_edits",
   "xai_video",
@@ -73,6 +74,7 @@ export const MODEL_OPTION_POLICY_PROTOCOL_LABELS: Record<ModelOptionPolicyProtoc
   google_image_generation: "Google（Image Generation）",
   gemini_interactions: "Google（Interactions）",
   xai_responses: "xAI（Responses）",
+  grok_leader: "Grok Build（leader ACP）",
   xai_image: "xAI（Images Generations）",
   xai_image_edits: "xAI（Images Edits）",
   xai_video: "xAI（Video Generations）",
@@ -144,9 +146,11 @@ export function resolveModelOptionPolicyProtocol(protocol: string): ModelOptionP
     case "anthropic_messages":
       return "anthropic_messages";
     case "xai":
-    case "grok":
     case "xai_responses":
       return "xai_responses";
+    case "grok":
+    case "grok_leader":
+      return "grok_leader";
     case "xai_image":
       return "xai_image";
     case "xai_image_edits":

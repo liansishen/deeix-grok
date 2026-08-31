@@ -59,6 +59,7 @@ export type AdminLLMAdapter =
   | "google_image_generation"
   | "gemini_interactions"
   | "xai_responses"
+  | "grok_leader"
   | "xai_image"
   | "xai_image_edits"
   | "xai_video"
@@ -69,6 +70,7 @@ export type AdminLLMCompatible =
   | "anthropic"
   | "google"
   | "xai"
+  | "grok"
   | "openrouter"
   | "custom";
 export type AdminLLMCbLogic = "or" | "and";

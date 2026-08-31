@@ -23,6 +23,8 @@ const (
 	EndpointVideoExtensions = "video_extensions"
 	// EndpointInteractions 表示 Gemini Interactions API 端点。
 	EndpointInteractions = "interactions"
+	// EndpointGrokLeader 表示 Grok Build leader 的本机 ACP endpoint。
+	EndpointGrokLeader = "grok_leader"
 )
 
 // RouteConfig 定义渠道路由调用参数。

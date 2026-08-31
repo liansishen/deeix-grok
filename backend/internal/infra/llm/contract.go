@@ -15,6 +15,7 @@ const (
 	EndpointVideoGenerations = portllm.EndpointVideoGenerations
 	EndpointVideoExtensions  = portllm.EndpointVideoExtensions
 	EndpointInteractions     = portllm.EndpointInteractions
+	EndpointGrokLeader       = portllm.EndpointGrokLeader
 )
 
 // 协议标识。
@@ -30,6 +31,7 @@ const (
 	AdapterGoogleImageGeneration  = portllm.AdapterGoogleImageGeneration
 	AdapterGeminiInteractions     = portllm.AdapterGeminiInteractions
 	AdapterXAIResponses           = portllm.AdapterXAIResponses
+	AdapterGrokLeader             = portllm.AdapterGrokLeader
 	AdapterXAIImage               = portllm.AdapterXAIImage
 	AdapterXAIImageEdits          = portllm.AdapterXAIImageEdits
 	AdapterXAIVideo               = portllm.AdapterXAIVideo

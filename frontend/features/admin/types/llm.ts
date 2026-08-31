@@ -33,6 +33,7 @@ export const ADAPTER_LABELS: Record<string, string> = {
   google_image_generation: resolveProtocolLabel("google_image_generation"),
   gemini_interactions: resolveProtocolLabel("gemini_interactions"),
   xai_responses: resolveProtocolLabel("xai_responses"),
+  grok_leader: resolveProtocolLabel("grok_leader"),
   xai_image: resolveProtocolLabel("xai_image"),
   xai_image_edits: resolveProtocolLabel("xai_image_edits"),
   xai_video: resolveProtocolLabel("xai_video"),

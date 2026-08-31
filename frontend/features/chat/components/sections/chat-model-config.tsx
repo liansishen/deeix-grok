@@ -415,6 +415,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   xai_video: "Video Generations",
   xai_video_extensions: "Video Extensions",
   xai_responses: "xAI Responses",
+  grok_leader: "Grok Build (leader ACP)",
 };
 
 function stringifyOptions(value: ConversationOptions): string {

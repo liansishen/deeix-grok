@@ -12,7 +12,7 @@ export const DEFAULT_LOGIN_SETTINGS: LoginPageSettings = {
 export const DEFAULT_LOGIN_OPTIONS: LoginOptionsData = {
   usernameEnabled: true,
   emailEnabled: true,
-  emailRegistrationEnabled: true,
+  emailRegistrationEnabled: false,
   emailVerificationEnabled: false,
   passwordResetEnabled: false,
   turnstileRegistrationEnabled: false,

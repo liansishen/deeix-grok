@@ -653,7 +653,7 @@ func Load() Config {
 		UsernameLoginEnabled:              true,
 		EmailLoginEnabled:                 true,
 		ThirdPartyLoginEnabled:            true,
-		EmailRegistrationEnabled:          true,
+		EmailRegistrationEnabled:          false,
 		EmailVerificationEnabled:          false,
 		PasswordResetEnabled:              false,
 		EmailRegistrationDomains:          "",

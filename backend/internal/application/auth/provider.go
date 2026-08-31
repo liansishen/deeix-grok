@@ -633,7 +633,7 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		Slug:                slug,
 		LogoURL:             logoURL,
 		LoginEnabled:        boolValue(input.LoginEnabled, true),
-		RegistrationEnabled: boolValue(input.RegistrationEnabled, true),
+		RegistrationEnabled: boolValue(input.RegistrationEnabled, false),
 		ClientID:            strings.TrimSpace(input.ClientID),
 		IssuerURL:           strings.TrimSpace(input.IssuerURL),
 		DiscoveryURL:        strings.TrimSpace(input.DiscoveryURL),

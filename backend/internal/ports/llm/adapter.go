@@ -20,6 +20,7 @@ const (
 	AdapterGoogleImageGeneration  = "google_image_generation"     // POST /v1beta/models/{model}:generateContent
 	AdapterGeminiInteractions     = "gemini_interactions"         // POST /v1beta/interactions
 	AdapterXAIResponses           = "xai_responses"               // POST /v1/responses（OpenAI 兼容）
+	AdapterGrokLeader             = "grok_leader"                 // Grok Build leader over local ACP IPC
 	AdapterXAIImage               = "xai_image"                   // POST /v1/images/generations
 	AdapterXAIImageEdits          = "xai_image_edits"             // POST /v1/images/edits
 	AdapterXAIVideo               = "xai_video"                   // POST /v1/videos/generations + GET /v1/videos/{request_id}
@@ -56,6 +57,7 @@ func IsKnownAdapter(raw string) bool {
 		AdapterGoogleImageGeneration,
 		AdapterGeminiInteractions,
 		AdapterXAIResponses,
+		AdapterGrokLeader,
 		AdapterXAIImage,
 		AdapterXAIImageEdits,
 		AdapterXAIVideo,
@@ -69,7 +71,7 @@ func IsKnownAdapter(raw string) bool {
 // IsImplementedAdapter 返回协议是否已有可用的传输层实现。
 func IsImplementedAdapter(raw string) bool {
 	switch NormalizeAdapter(raw) {
-	case AdapterOpenAIResponses, AdapterOpenRouterChat, AdapterOpenRouterResponses, AdapterOpenAIChatCompletions, AdapterOpenAIImageGenerations, AdapterOpenAIImageEdits, AdapterXAIResponses,
+	case AdapterOpenAIResponses, AdapterOpenRouterChat, AdapterOpenRouterResponses, AdapterOpenAIChatCompletions, AdapterOpenAIImageGenerations, AdapterOpenAIImageEdits, AdapterXAIResponses, AdapterGrokLeader,
 		AdapterAnthropicMessages, AdapterGoogleGenerateContent, AdapterGoogleImageGeneration, AdapterGeminiInteractions, AdapterXAIImage, AdapterXAIImageEdits, AdapterXAIVideo, AdapterXAIVideoExtensions:
 		return true
 	default:
@@ -90,7 +92,7 @@ func SupportsStreamingAdapter(raw string) bool {
 		AdapterGoogleGenerateContent,
 		AdapterGoogleImageGeneration,
 		AdapterGeminiInteractions,
-		AdapterXAIResponses:
+		AdapterXAIResponses, AdapterGrokLeader:
 		return true
 	default:
 		return false
@@ -167,6 +169,8 @@ func DefaultEndpointForAdapter(adapter string) string {
 		return EndpointVideoExtensions
 	case AdapterGeminiInteractions:
 		return EndpointInteractions
+	case AdapterGrokLeader:
+		return EndpointGrokLeader
 	default:
 		// openai_responses、openrouter_responses、xai_responses 及所有未知值均使用 Responses 端点。
 		return EndpointResponses

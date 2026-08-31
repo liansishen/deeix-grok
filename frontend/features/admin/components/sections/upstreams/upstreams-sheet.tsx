@@ -116,6 +116,7 @@ const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], 
     "google_generate_content",
     "gemini_interactions",
     "xai_responses",
+    "grok_leader",
   ],
   audio: [
     "openai_responses",

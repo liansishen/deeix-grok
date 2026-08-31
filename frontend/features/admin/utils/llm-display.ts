@@ -16,6 +16,7 @@ export const COMPATIBLE_OPTIONS = [
   { label: "Anthropic", value: "anthropic" },
   { label: "Google", value: "google" },
   { label: "xAI", value: "xai" },
+  { label: "Grok Build", value: "grok" },
   { label: "OpenRouter", value: "openrouter" },
   { label: "Custom", value: "custom" },
 ] as const;
@@ -37,6 +38,7 @@ export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
   { value: "google_image_generation", label: "Image Generation (Google)", kinds: ["image_gen", "image_edit"] },
   { value: "gemini_interactions", label: "Interactions (Google)", kinds: ["chat", "image_gen", "image_edit", "video_gen"] },
   { value: "xai_responses", label: "Responses (xAI)", kinds: ["chat"] },
+  { value: "grok_leader", label: "Grok Build (leader ACP)", kinds: ["chat"] },
   { value: "xai_image", label: "Images Generations (xAI)", kinds: ["image_gen"] },
   { value: "xai_image_edits", label: "Images Edits (xAI)", kinds: ["image_edit"] },
   { value: "xai_video", label: "Video Generations (xAI)", kinds: ["video_gen"] },
